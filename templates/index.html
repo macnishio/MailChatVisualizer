@@ -62,8 +62,8 @@
                     </div>
                 </div>
                 <div class="messages-container">
-                    {% if messages and messages.items %}
-                        {% for message in messages.items %}
+                    {% if messages and messages.message_list %}
+                        {% for message in messages.message_list %}
                             <div class="message {% if message.is_sent %}sent{% else %}received{% endif %}">
                                 <div class="message-content">
                                     {% if message.subject %}

@@ -47,7 +47,7 @@ def index():
     
     # メッセージデータの初期化
     messages_dict = {
-        'items': [],
+        'message_list': [],  # itemsをmessage_listに変更
         'total': 0,
         'has_next': False,
         'next_page': None
@@ -81,15 +81,13 @@ def index():
             current_messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
             
             # メッセージデータを辞書に変換
-            messages_dict['items'] = []
-            for msg in current_messages:
-                messages_dict['items'].append({
-                    'id': msg.id,
-                    'subject': msg.subject,
-                    'body': msg.body,
-                    'date': msg.date,
-                    'is_sent': msg.is_sent
-                })
+            messages_dict['message_list'] = [{
+                'id': msg.id,
+                'subject': msg.subject,
+                'body': msg.body,
+                'date': msg.date,
+                'is_sent': msg.is_sent
+            } for msg in current_messages]
             
             messages_dict['total'] = total
             messages_dict['has_next'] = (page * per_page) < total
