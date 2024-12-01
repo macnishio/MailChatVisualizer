@@ -57,18 +57,24 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    if (searchInput) {
+    if (searchInput && searchResults) {
+        let debounceTimer;
+        
         searchInput.addEventListener('input', function() {
             clearTimeout(debounceTimer);
+            const query = this.value.trim();
+            
+            if (query.length < 2) {
+                searchResults.classList.remove('show');
+                return;
+            }
+            
             debounceTimer = setTimeout(() => {
-                const query = this.value;
-                if (query.length >= 2) {
-                    fetch(`/api/search_contacts?q=${encodeURIComponent(query)}`)
-                        .then(response => response.json())
-                        .then(data => {
-                            searchResults.innerHTML = '';
-                            searchResults.classList.add('show');
-                            
+                fetch(`/api/search_contacts?q=${encodeURIComponent(query)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        searchResults.innerHTML = '';
+                        if (data.length > 0) {
                             data.forEach(contact => {
                                 const item = document.createElement('a');
                                 item.className = 'dropdown-item';
@@ -76,14 +82,19 @@ document.addEventListener('DOMContentLoaded', function() {
                                 item.textContent = contact;
                                 searchResults.appendChild(item);
                             });
-                        });
-                } else {
-                    searchResults.classList.remove('show');
-                }
+                            searchResults.classList.add('show');
+                        } else {
+                            searchResults.classList.remove('show');
+                        }
+                    })
+                    .catch(error => {
+                        console.error('検索エラー:', error);
+                        searchResults.classList.remove('show');
+                    });
             }, 300);
         });
 
-        // クリック以外での非表示
+        // クリック外での非表示
         document.addEventListener('click', function(e) {
             if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
                 searchResults.classList.remove('show');
