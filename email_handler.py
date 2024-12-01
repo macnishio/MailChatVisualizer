@@ -56,38 +56,15 @@ class EmailHandler:
                 result += str(part)
         return result
 
-    def escape_folder_name(self, folder):
-        """フォルダー名をIMAPフォーマットでエスケープする"""
-        try:
-            # スペースと特殊文字を含むフォルダー名をエスケープ
-            if '[' in folder or ']' in folder:
-                return folder.encode('utf-7').decode()
-            return f'"{folder}"'.encode('utf-7').decode()
-        except Exception as e:
-            print(f"フォルダー名エスケープエラー: {str(e)}")
-            return folder
-
-    def escape_imap_string(self, string):
-        """IMAP検索文字列をエスケープする"""
-        if not string:
-            return '""'
-        try:
-            # 特殊文字をエスケープ
-            escaped = re.sub(r'([\\"\(\)])', r'\\\1', string)
-            # UTF-7エンコーディングを使用（日本語対応）
-            return f'"{escaped}"'.encode('utf-7').decode()
-        except Exception as e:
-            print(f"文字列エスケープエラー: {str(e)}")
-            return f'"{string}"'
-
     def select_folder(self, folder):
         """フォルダーを選択する"""
         try:
-            folder_name = self.escape_folder_name(folder)
-            status, data = self.conn.select(folder_name, readonly=True)
+            if '[Gmail]' in folder:
+                # Gmailフォルダー名を適切にエンコード
+                folder = folder.replace('[Gmail]', '&BBkEWQQlBDsENQQ9BD0ESwQ1-')
+            status, data = self.conn.select(f'"{folder}"', readonly=True)
             if status != 'OK':
-                print(f"フォルダー選択エラー ({folder}): {data[0].decode()}")
-                return False
+                raise Exception(f"選択エラー: {data[0].decode()}")
             return True
         except Exception as e:
             print(f"フォルダー選択エラー ({folder}): {str(e)}")
@@ -97,19 +74,23 @@ class EmailHandler:
         """検索条件を構築する"""
         criteria = []
         if contact_email:
-            escaped_contact = self.escape_imap_string(contact_email)
-            criteria.append(f'(OR FROM {escaped_contact} TO {escaped_contact})')
+            # メールアドレスからの検索条件
+            email_part = re.search(r'<(.+?)>', contact_email)
+            if email_part:
+                email = email_part.group(1)
+                criteria.append(f'(OR FROM "{email}" TO "{email}")')
         if search_query:
-            escaped_query = self.escape_imap_string(search_query)
-            criteria.append(f'(OR SUBJECT {escaped_query} BODY {escaped_query})')
-        return ' '.join(criteria) if criteria else 'ALL'
+            # 検索クエリのエンコーディング
+            query = search_query.encode('utf-7').decode()
+            criteria.append(f'(OR SUBJECT "{query}" BODY "{query}")')
+        return '(' + ' '.join(criteria) + ')' if criteria else 'ALL'
 
     def get_contacts(self):
         """メールの連絡先一覧を取得する"""
         contacts = set()
         try:
             self.check_connection()
-            for folder in ['INBOX', '[Gmail]/送信済みメール', '[Gmail]/Sent Mail']:
+            for folder in ['INBOX', '&BBkEWQQlBDsENQQ9BD0ESwQ1-/送信済みメール']:
                 if not self.select_folder(folder):
                     continue
 
@@ -144,19 +125,17 @@ class EmailHandler:
         messages = []
         try:
             self.check_connection()
-            for folder in ['INBOX', '[Gmail]/送信済みメール', '[Gmail]/Sent Mail']:
+            for folder in ['INBOX', '&BBkEWQQlBDsENQQ9BD0ESwQ1-/送信済みメール']:
                 if not self.select_folder(folder):
                     continue
-
+                
                 try:
-                    # 検索条件の構築と実行
-                    search_criteria = self.build_search_criteria(contact_email, search_query)
-                    _, message_numbers = self.conn.search(None, search_criteria)
-                    
-                    if not message_numbers[0]:
+                    criteria = self.build_search_criteria(contact_email, search_query)
+                    _, nums = self.conn.search(None, criteria)
+                    if not nums[0]:
                         continue
-
-                    for num in message_numbers[0].split():
+                        
+                    for num in nums[0].split():
                         try:
                             _, msg_data = self.conn.fetch(num, '(RFC822)')
                             email_body = msg_data[0][1]
