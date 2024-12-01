@@ -30,7 +30,8 @@ def index():
             session['password'],
             session['imap_server']
         )
-        contacts = email_handler.get_contacts()
+        contact_search = request.args.get('contact_search', '')
+        contacts = email_handler.get_contacts(contact_search)
         
         selected_contact = request.args.get('contact')
         search_query = request.args.get('search')

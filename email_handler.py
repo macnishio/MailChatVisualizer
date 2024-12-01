@@ -119,7 +119,7 @@ class EmailHandler:
                 print(f"検索クエリエンコードエラー: {str(e)}")
         return ' '.join(criteria) if criteria else 'ALL'
 
-    def get_contacts(self):
+    def get_contacts(self, search_query=None):
         """メールの連絡先一覧を取得する"""
         contacts = set()
         try:
@@ -143,11 +143,11 @@ class EmailHandler:
                             
                             if folder == b'INBOX':
                                 from_addr = self.decode_str(msg['from'])
-                                if from_addr:
+                                if from_addr and (not search_query or search_query.lower() in from_addr.lower()):
                                     contacts.add(from_addr)
                             else:
                                 to_addr = self.decode_str(msg['to'])
-                                if to_addr:
+                                if to_addr and (not search_query or search_query.lower() in to_addr.lower()):
                                     contacts.add(to_addr)
                         except Exception as e:
                             print(f"メッセージ処理エラー: {str(e)}")
