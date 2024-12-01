@@ -135,7 +135,7 @@ def sync_emails(email, password, imap_server):
                                 stats['total_errors'] += 1
                                 stats['folder_stats'][str(folder)]['errors'] += 1
                                 continue
-
+                        
                         batch_time = time.time() - batch_start_time
                         print(f"バッチ処理完了 ({i+1}-{min(i+batch_size, message_count)}/{message_count}): {batch_time:.2f}秒")
                     
