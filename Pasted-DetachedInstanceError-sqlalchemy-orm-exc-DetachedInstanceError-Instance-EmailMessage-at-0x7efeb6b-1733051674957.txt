@@ -1,0 +1,65 @@
+DetachedInstanceError
+sqlalchemy.orm.exc.DetachedInstanceError: Instance <EmailMessage at 0x7efeb6ba5610> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
+
+Traceback (most recent call last)
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 1536, in __call__
+return self.wsgi_app(environ, start_response)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 1514, in wsgi_app
+response = self.handle_exception(e)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
+response = self.full_dispatch_request()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
+rv = self.handle_user_exception(e)
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
+rv = self.dispatch_request()
+     ^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
+return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/app.py", line 85, in index
+return render_template('index.html', messages=messages, contacts=contacts)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/templating.py", line 150, in render_template
+return _render(app, template, context)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/templating.py", line 131, in _render
+rv = template.render(context)
+     ^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/jinja2/environment.py", line 1304, in render
+self.environment.handle_exception()
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/jinja2/environment.py", line 939, in handle_exception
+raise rewrite_traceback_stack(source=source)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/templates/index.html", line 1, in top-level template code
+{% extends "base.html" %}
+File "/home/runner/MailChatVisualizer/templates/base.html", line 42, in top-level template code
+{% block content %}{% endblock %}
+File "/home/runner/MailChatVisualizer/templates/index.html", line 66, in block 'content'
+<div class="message {% if message.is_sent %}sent{% else %}received{% endif %}">
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/jinja2/environment.py", line 487, in getattr
+return getattr(obj, attribute)
+       ^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/attributes.py", line 566, in __get__
+return self.impl.get(state, dict_)  # type: ignore[no-any-return]
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/attributes.py", line 1086, in get
+value = self._fire_loader_callables(state, key, passive)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/attributes.py", line 1116, in _fire_loader_callables
+return state._load_expired(state, passive)
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/state.py", line 803, in _load_expired
+self.manager.expired_attribute_loader(self, toload, passive)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/loading.py", line 1603, in load_scalar_attributes
+raise orm_exc.DetachedInstanceError(
+^
+sqlalchemy.orm.exc.DetachedInstanceError: Instance <EmailMessage at 0x7efeb6ba5610> is not bound to a Session; attribute refresh operation cannot proceed (Background on this error at: https://sqlalche.me/e/20/bhk3)
+The debugger caught an exception in your WSGI application. You can now look at the traceback which led to the error.
+To switch between the interactive traceback and the plaintext one, you can click on the "Traceback" headline. From the text traceback you can also create a paste of it.
+

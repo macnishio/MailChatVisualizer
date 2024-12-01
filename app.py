@@ -26,10 +26,9 @@ def index():
     if 'email' not in session:
         return redirect(url_for('settings'))
         
-    # ページネーションパラメータを追加
     page = request.args.get('page', 1, type=int)
     per_page = 20
-        
+    
     # キャッシュから連絡先を取得
     contacts = cache.get('contacts')
     if not contacts:
@@ -48,41 +47,62 @@ def index():
             print(f"連絡先取得エラー: {str(e)}")
             contacts = []
     
-    messages = []
+    # メッセージの取得とページネーション
+    messages_pagination = None
     selected_contact = request.args.get('contact')
     search_query = request.args.get('search')
     
     if selected_contact:
-        with session_scope() as db_session:
-            messages_query = db_session.query(EmailMessage).filter(
-                db.or_(
-                    EmailMessage.from_address == selected_contact,
-                    EmailMessage.to_address == selected_contact
-                )
-            ).order_by(EmailMessage.date.desc())
-            
-            if search_query:
-                messages_query = messages_query.filter(
+        try:
+            # セッションスコープ内でクエリを実行
+            with db.session.begin():
+                messages_query = EmailMessage.query.filter(
                     db.or_(
-                        EmailMessage.subject.ilike(f'%{search_query}%'),
-                        EmailMessage.body.ilike(f'%{search_query}%')
+                        EmailMessage.from_address == selected_contact,
+                        EmailMessage.to_address == selected_contact
                     )
+                ).order_by(EmailMessage.date.desc())
+                
+                if search_query:
+                    messages_query = messages_query.filter(
+                        db.or_(
+                            EmailMessage.subject.ilike(f'%{search_query}%'),
+                            EmailMessage.body.ilike(f'%{search_query}%')
+                        )
+                    )
+                
+                # オプション設定でレイジーローディングを有効化
+                messages_pagination = messages_query.options(
+                    db.joinedload('*')
+                ).paginate(
+                    page=page,
+                    per_page=per_page,
+                    error_out=False
                 )
-            
-            messages = messages_query.paginate(
-                page=page, 
-                per_page=per_page, 
-                error_out=False
-            )
+                
+                # すべての必要なデータをセッション内でロード
+                if messages_pagination.items:
+                    for message in messages_pagination.items:
+                        db.session.refresh(message)
+        
+        except Exception as e:
+            print(f"メッセージ取得エラー: {str(e)}")
+            messages_pagination = None
     
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        return jsonify({
-            'messages': [msg.to_dict() for msg in messages.items],
-            'has_next': messages.has_next,
-            'next_page': messages.next_num if messages.has_next else None
-        })
-            
-    return render_template('index.html', messages=messages, contacts=contacts)
+        if messages_pagination:
+            return jsonify({
+                'messages': [msg.to_dict() for msg in messages_pagination.items],
+                'has_next': messages_pagination.has_next,
+                'next_page': messages_pagination.next_num if messages_pagination.has_next else None
+            })
+        return jsonify({'messages': [], 'has_next': False, 'next_page': None})
+    
+    return render_template(
+        'index.html',
+        messages=messages_pagination if messages_pagination else [],
+        contacts=contacts
+    )
 
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
