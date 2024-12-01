@@ -133,12 +133,16 @@ def index():
                         messages_query = messages_query.filter(and_(*search_conditions))
                         
                         # 検索結果を関連度順にソート
+                        from sqlalchemy import case
                         messages_query = messages_query.order_by(
-                            # 件名または本文に完全一致する場合を優先
-                            case([(or_(
-                                EmailMessage.subject.ilike(f'%{term}%'),
-                                EmailMessage.body.ilike(f'%{term}%')
-                            ), 1)], else_=0).desc(),
+                            # 件名に含まれる場合を最優先
+                            case(
+                                (EmailMessage.subject.ilike(f'%{search_terms[0]}%'), 2),
+                                else_=case(
+                                    (EmailMessage.body.ilike(f'%{search_terms[0]}%'), 1),
+                                    else_=0
+                                )
+                            ).desc(),
                             # 次に日付の新しい順
                             EmailMessage.date.desc()
                         )
