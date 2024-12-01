@@ -40,62 +40,82 @@ class EmailHandler:
     def parse_email_message(self, email_body):
         """メールメッセージをパースしてディクショナリを返す"""
         msg = email.message_from_bytes(email_body)
-        body = ""
+        body = None
+        subject = None
         
-        # デバッグログ追加
-        print(f"メッセージヘッダー: {dict(msg.items())}")
+        # デバッグ情報の出力
+        print("\n=== メッセージパース開始 ===")
         print(f"Content-Type: {msg.get_content_type()}")
         print(f"Is Multipart: {msg.is_multipart()}")
         
-        # マルチパートメッセージの処理
-        if msg.is_multipart():
-            for part in msg.walk():
-                content_type = part.get_content_type()
-                print(f"Part Content-Type: {content_type}")
-                
-                if content_type == "text/plain":
-                    try:
-                        payload = part.get_payload(decode=True)
-                        if payload:
-                            charset = part.get_content_charset()
-                            if charset:
-                                try:
-                                    body = payload.decode(charset)
-                                    break
-                                except UnicodeDecodeError:
-                                    body = payload.decode('utf-8', errors='replace')
-                                    break
-                            else:
-                                body = payload.decode('utf-8', errors='replace')
-                                break
-                    except Exception as e:
-                        print(f"Part decode error: {str(e)}")
+        try:
+            # 件名の取得とデコード
+            subject = self.decode_str(msg['subject'])
+            print(f"Original subject: {msg['subject']}")
+            print(f"Decoded subject: {subject}")
+            
+            # 本文の取得とデコード
+            if msg.is_multipart():
+                for part in msg.walk():
+                    if part.get_content_maintype() == 'multipart':
                         continue
-        else:
-            try:
+                    if part.get_content_type() == "text/plain":
+                        try:
+                            payload = part.get_payload(decode=True)
+                            if payload:
+                                charset = part.get_content_charset()
+                                if charset:
+                                    body = payload.decode(charset)
+                                else:
+                                    # 文字コードの推測を試みる
+                                    for encoding in ['utf-8', 'iso-2022-jp', 'shift-jis', 'euc-jp']:
+                                        try:
+                                            body = payload.decode(encoding)
+                                            break
+                                        except UnicodeDecodeError:
+                                            continue
+                                if body:
+                                    break
+                        except Exception as e:
+                            print(f"Part decode error: {str(e)}")
+            else:
                 payload = msg.get_payload(decode=True)
                 if payload:
                     charset = msg.get_content_charset()
                     if charset:
-                        try:
-                            body = payload.decode(charset)
-                        except UnicodeDecodeError:
-                            body = payload.decode('utf-8', errors='replace')
+                        body = payload.decode(charset)
                     else:
-                        body = payload.decode('utf-8', errors='replace')
-            except Exception as e:
-                print(f"Message decode error: {str(e)}")
-        
-        # デバッグ情報
-        print(f"Subject: {msg['subject']}")
-        print(f"Body length: {len(body)}")
-        print(f"Body preview: {body[:100]}")
+                        # 文字コードの推測を試みる
+                        for encoding in ['utf-8', 'iso-2022-jp', 'shift-jis', 'euc-jp']:
+                            try:
+                                body = payload.decode(encoding)
+                                break
+                            except UnicodeDecodeError:
+                                continue
+            
+            # デバッグ情報
+            print(f"Body found: {'Yes' if body else 'No'}")
+            if body:
+                print(f"Body length: {len(body)}")
+                print(f"Body preview: {body[:100]}")
+            
+            # 本文が取得できなかった場合のフォールバック
+            if not body:
+                body = "(本文を取得できませんでした)"
+                
+            if not subject:
+                subject = "(件名なし)"
+                
+        except Exception as e:
+            print(f"Message parse error: {str(e)}")
+            body = "(メッセージの解析に失敗しました)"
+            subject = "(件名の解析に失敗しました)"
         
         return {
             'message_id': msg['message-id'],
             'from': self.decode_str(msg['from']),
             'to': self.decode_str(msg['to']),
-            'subject': self.decode_str(msg['subject']),
+            'subject': subject,
             'body': body,
             'date': parsedate_to_datetime(msg['date']),
             'is_sent': self.email_address in self.decode_str(msg['from'])
