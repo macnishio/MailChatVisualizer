@@ -46,7 +46,7 @@ def index():
             contacts = []
     
     # メッセージデータの初期化
-    messages = {
+    messages_data = {
         'items': [],
         'total': 0,
         'has_next': False,
@@ -58,10 +58,9 @@ def index():
     
     if selected_contact:
         try:
-            # データベースセッションを使用してクエリを実行
+            # セッションスコープ内でクエリを実行
             with db.session.begin():
-                # クエリの実行とデータの取得
-                messages_query = EmailMessage.query.filter(
+                messages_query = db.session.query(EmailMessage).filter(
                     db.or_(
                         EmailMessage.from_address == selected_contact,
                         EmailMessage.to_address == selected_contact
@@ -79,35 +78,29 @@ def index():
                 # 全件数を取得
                 total = messages_query.count()
                 
-                # 現在のページのメッセージを取得して、データを完全にロード
+                # 現在のページのメッセージを取得
                 current_messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
                 
-                # セッションがアクティブな間にデータを辞書に変換
-                messages = {
-                    'items': [{
-                        'id': msg.id,
-                        'subject': msg.subject,
-                        'body': msg.body,
-                        'date': msg.date,
-                        'is_sent': msg.is_sent
-                    } for msg in current_messages],
-                    'total': total,
-                    'has_next': (page * per_page) < total,
-                    'next_page': page + 1 if (page * per_page) < total else None
-                }
+                # メッセージデータを辞書に変換
+                messages_data['items'] = [{
+                    'id': msg.id,
+                    'subject': msg.subject,
+                    'body': msg.body,
+                    'date': msg.date,
+                    'is_sent': msg.is_sent
+                } for msg in current_messages]
+                
+                messages_data['total'] = total
+                messages_data['has_next'] = (page * per_page) < total
+                messages_data['next_page'] = page + 1 if (page * per_page) < total else None
+                
         except Exception as e:
             print(f"メッセージ取得エラー: {str(e)}")
-            messages = {
-                'items': [],
-                'total': 0,
-                'has_next': False,
-                'next_page': None
-            }
     
     # テンプレートにデータを渡す
     return render_template(
         'index.html',
-        messages=messages,
+        messages=messages_data,
         contacts=contacts,
         current_page=page
     )
