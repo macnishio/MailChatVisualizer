@@ -56,29 +56,64 @@ class EmailHandler:
                 result += str(part)
         return result
 
+    def escape_folder_name(self, folder):
+        """フォルダー名をIMAPフォーマットでエスケープする"""
+        try:
+            # スペースと特殊文字を含むフォルダー名をエスケープ
+            if '[' in folder or ']' in folder:
+                return folder.encode('utf-7').decode()
+            return f'"{folder}"'.encode('utf-7').decode()
+        except Exception as e:
+            print(f"フォルダー名エスケープエラー: {str(e)}")
+            return folder
+
     def escape_imap_string(self, string):
         """IMAP検索文字列をエスケープする"""
         if not string:
             return '""'
-        # 特殊文字をエスケープ
-        escaped = re.sub(r'([\\"\(\)])', r'\\\1', string)
-        # UTF-7エンコーディングを使用（日本語対応）
         try:
+            # 特殊文字をエスケープ
+            escaped = re.sub(r'([\\"\(\)])', r'\\\1', string)
+            # UTF-7エンコーディングを使用（日本語対応）
             return f'"{escaped}"'.encode('utf-7').decode()
-        except:
-            return f'"{escaped}"'
+        except Exception as e:
+            print(f"文字列エスケープエラー: {str(e)}")
+            return f'"{string}"'
+
+    def select_folder(self, folder):
+        """フォルダーを選択する"""
+        try:
+            folder_name = self.escape_folder_name(folder)
+            status, data = self.conn.select(folder_name, readonly=True)
+            if status != 'OK':
+                print(f"フォルダー選択エラー ({folder}): {data[0].decode()}")
+                return False
+            return True
+        except Exception as e:
+            print(f"フォルダー選択エラー ({folder}): {str(e)}")
+            return False
+
+    def build_search_criteria(self, contact_email, search_query):
+        """検索条件を構築する"""
+        criteria = []
+        if contact_email:
+            escaped_contact = self.escape_imap_string(contact_email)
+            criteria.append(f'(OR FROM {escaped_contact} TO {escaped_contact})')
+        if search_query:
+            escaped_query = self.escape_imap_string(search_query)
+            criteria.append(f'(OR SUBJECT {escaped_query} BODY {escaped_query})')
+        return ' '.join(criteria) if criteria else 'ALL'
 
     def get_contacts(self):
         """メールの連絡先一覧を取得する"""
         contacts = set()
         try:
             self.check_connection()
-            for folder in ['INBOX', '[Gmail]/Sent Mail']:
-                try:
-                    status, _ = self.conn.select(folder, readonly=True)
-                    if status != 'OK':
-                        continue
+            for folder in ['INBOX', '[Gmail]/送信済みメール', '[Gmail]/Sent Mail']:
+                if not self.select_folder(folder):
+                    continue
 
+                try:
                     _, messages = self.conn.search(None, 'ALL')
                     for num in messages[0].split()[-100:]:  # 最新100件
                         try:
@@ -109,21 +144,13 @@ class EmailHandler:
         messages = []
         try:
             self.check_connection()
-            for folder in ['INBOX', '[Gmail]/Sent Mail']:
+            for folder in ['INBOX', '[Gmail]/送信済みメール', '[Gmail]/Sent Mail']:
+                if not self.select_folder(folder):
+                    continue
+
                 try:
-                    status, _ = self.conn.select(folder, readonly=True)
-                    if status != 'OK':
-                        print(f"フォルダー選択エラー ({folder})")
-                        continue
-
-                    # 検索条件の構築
-                    escaped_contact = self.escape_imap_string(contact_email)
-                    search_criteria = f'(OR FROM {escaped_contact} TO {escaped_contact})'
-                    
-                    if search_query:
-                        escaped_query = self.escape_imap_string(search_query)
-                        search_criteria = f'(AND {search_criteria} (OR SUBJECT {escaped_query} BODY {escaped_query}))'
-
+                    # 検索条件の構築と実行
+                    search_criteria = self.build_search_criteria(contact_email, search_query)
                     _, message_numbers = self.conn.search(None, search_criteria)
                     
                     if not message_numbers[0]:
@@ -147,10 +174,7 @@ class EmailHandler:
                                 payload = msg.get_payload(decode=True)
                                 if payload:
                                     body = payload.decode('utf-8', errors='replace')
-                            
-                            if search_query and search_query.lower() not in body.lower():
-                                continue
-                            
+
                             date = parsedate_to_datetime(msg['date'])
                             from_addr = self.decode_str(msg['from'])
                             is_sent = self.email_address in from_addr
