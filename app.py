@@ -26,6 +26,10 @@ def index():
     if 'email' not in session:
         return redirect(url_for('settings'))
         
+    # ページネーションパラメータを追加
+    page = request.args.get('page', 1, type=int)
+    per_page = 20
+        
     # キャッシュから連絡先を取得
     contacts = cache.get('contacts')
     if not contacts:
@@ -44,36 +48,32 @@ def index():
             print(f"連絡先取得エラー: {str(e)}")
             contacts = []
     
-    # 検索フィルタリング
-    contact_search = request.args.get('contact_search', '')
-    if contact_search:
-        contacts = [c for c in contacts if contact_search.lower() in c.lower()]
-    
     messages = []
     selected_contact = request.args.get('contact')
     search_query = request.args.get('search')
     
     if selected_contact:
-        messages_query = EmailMessage.query.filter(
-            db.or_(
-                EmailMessage.from_address == selected_contact,
-                EmailMessage.to_address == selected_contact
-            )
-        ).order_by(EmailMessage.date.desc())
-        
-        if search_query:
-            messages_query = messages_query.filter(
+        with session_scope() as db_session:
+            messages_query = db_session.query(EmailMessage).filter(
                 db.or_(
-                    EmailMessage.subject.ilike(f'%{search_query}%'),
-                    EmailMessage.body.ilike(f'%{search_query}%')
+                    EmailMessage.from_address == selected_contact,
+                    EmailMessage.to_address == selected_contact
                 )
+            ).order_by(EmailMessage.date.desc())
+            
+            if search_query:
+                messages_query = messages_query.filter(
+                    db.or_(
+                        EmailMessage.subject.ilike(f'%{search_query}%'),
+                        EmailMessage.body.ilike(f'%{search_query}%')
+                    )
+                )
+            
+            messages = messages_query.paginate(
+                page=page, 
+                per_page=per_page, 
+                error_out=False
             )
-        
-        messages = messages_query.paginate(
-            page=page, 
-            per_page=per_page, 
-            error_out=False
-        )
     
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return jsonify({
