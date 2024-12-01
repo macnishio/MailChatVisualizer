@@ -1,0 +1,62 @@
+~/MailChatVisualizer$ flask run
+ * Debug mode: off
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on http://127.0.0.1:5000
+Press CTRL+C to quit
+127.0.0.1 - - [01/Dec/2024 13:27:13] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [01/Dec/2024 13:27:14] "GET /static/css/style.css HTTP/1.1" 304 -
+127.0.0.1 - - [01/Dec/2024 13:27:14] "GET /static/js/main.js HTTP/1.1" 304 -
+127.0.0.1 - - [01/Dec/2024 13:27:47] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [01/Dec/2024 13:27:48] "GET /static/css/style.css HTTP/1.1" 304 -
+127.0.0.1 - - [01/Dec/2024 13:27:48] "GET /static/js/main.js HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 0
+127.0.0.1 - - [01/Dec/2024 13:28:07] "GET /?contact="IKEA宜家家居"<no-reply@publications.email.IKEA.com.tw> HTTP/1.1" 200 -
+127.0.0.1 - - [01/Dec/2024 13:28:07] "GET /static/css/style.css HTTP/1.1" 304 -
+127.0.0.1 - - [01/Dec/2024 13:28:08] "GET /static/js/main.js HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 74
+Subject: None
+Body length: 0
+---
+127.0.0.1 - - [01/Dec/2024 13:28:09] "GET /?contact="VacationsToGo.com"+<vtgmail@list.vacationstogo.com> HTTP/1.1" 200 -
+127.0.0.1 - - [01/Dec/2024 13:28:09] "GET /static/css/style.css HTTP/1.1" 304 -
+127.0.0.1 - - [01/Dec/2024 13:28:09] "GET /static/js/main.js HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 75
+Subject: None
+Body length: 0
+---
+127.0.0.1 - - [01/Dec/2024 13:28:11] "GET /?contact="WordPress.com"+<hello@wordpress.com> HTTP/1.1" 200 -
+127.0.0.1 - - [01/Dec/2024 13:28:11] "GET /static/css/style.css HTTP/1.1" 304 -
+127.0.0.1 - - [01/Dec/2024 13:28:11] "GET /static/js/main.js HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 76
+Subject: None
+Body length: 0
+---
+127.0.0.1 - - [01/Dec/2024 13:28:12] "GET /?contact=ACサイトニュースレター<info@freebieac.net> HTTP/1.1" 200 -
+127.0.0.1 - - [01/Dec/2024 13:28:12] "GET /static/css/style.css HTTP/1.1" 304 -
+127.0.0.1 - - [01/Dec/2024 13:28:12] "GET /static/js/main.js HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 78
+Subject: None
+Body length: 0
+---
+127.0.0.1 - - [01/Dec/2024 13:28:13] "GET /?contact=Anthropic+Team+<team@email.anthropic.com> HTTP/1.1" 200 -
+127.0.0.1 - - [01/Dec/2024 13:28:14] "GET /static/css/style.css HTTP/1.1" 304 -
+127.0.0.1 - - [01/Dec/2024 13:28:14] "GET /static/js/main.js HTTP/1.1" 304 -

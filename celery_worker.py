@@ -4,6 +4,9 @@ from sqlalchemy import or_
 from models import EmailMessage
 from database import session_scope
 from email_handler import EmailHandler
+import email
+from email.utils import parsedate_to_datetime
+import traceback
 
 def make_celery(app_name=__name__):
     celery = Celery(
@@ -16,18 +19,18 @@ def make_celery(app_name=__name__):
 celery = make_celery('email_tasks')
 
 @celery.task
-def sync_emails(email, password, imap_server):
+def sync_emails(email_address, password, imap_server):
     """メールを同期するタスク"""
     from app import create_app
     import time
     
     start_time = time.time()
-    print(f"メール同期開始: {email}, サーバー: {imap_server}")
+    print(f"メール同期開始: {email_address}, サーバー: {imap_server}")
     app = create_app()
     
     with app.app_context():
         try:
-            handler = EmailHandler(email, password, imap_server)
+            handler = EmailHandler(email_address, password, imap_server)
             print("IMAPサーバーに接続成功")
             
             folders = [b'INBOX']
@@ -76,58 +79,83 @@ def sync_emails(email, password, imap_server):
                                     _, msg_data = handler.conn.fetch(num, '(RFC822)')
                                     email_body = msg_data[0][1]
                                     
-                                    # デバッグ情報の出力
                                     print("\n=== メッセージ同期開始 ===")
                                     print(f"Message number: {num}")
                                     
-                                    # メッセージのパース
-                                    parsed_msg = handler.parse_email_message(email_body)
-                                    
-                                    # パース結果の確認
-                                    print("パース結果:")
-                                    print(f"Subject: {parsed_msg['subject']}")
-                                    print(f"From: {parsed_msg['from']}")
-                                    print(f"To: {parsed_msg['to']}")
-                                    print(f"Body length: {len(parsed_msg['body']) if parsed_msg['body'] else 0}")
-                                    print(f"Body preview: {parsed_msg['body'][:100] if parsed_msg['body'] else 'No body'}")
-                                    
+                                    # メッセージのパースを試行
+                                    try:
+                                        msg = email.message_from_bytes(email_body)
+                                        
+                                        # デバッグ情報
+                                        print(f"Content-Type: {msg.get_content_type()}")
+                                        print(f"Is Multipart: {msg.is_multipart()}")
+                                        print(f"Original Subject: {msg['subject']}")
+                                        
+                                        # 本文の取得を試行
+                                        body = None
+                                        if msg.is_multipart():
+                                            for part in msg.walk():
+                                                if part.get_content_type() == "text/plain":
+                                                    try:
+                                                        payload = part.get_payload(decode=True)
+                                                        if payload:
+                                                            charset = part.get_content_charset() or 'utf-8'
+                                                            body = payload.decode(charset, errors='replace')
+                                                            break
+                                                    except Exception as e:
+                                                        print(f"Part decode error: {str(e)}")
+                                        else:
+                                            payload = msg.get_payload(decode=True)
+                                            if payload:
+                                                charset = msg.get_content_charset() or 'utf-8'
+                                                body = payload.decode(charset, errors='replace')
+                                        
+                                        # 件名と本文のデバッグ情報
+                                        print(f"Decoded Subject: {handler.decode_str(msg['subject'])}")
+                                        print(f"Body found: {'Yes' if body else 'No'}")
+                                        if body:
+                                            print(f"Body length: {len(body)}")
+                                            print(f"Body preview: {body[:100]}")
+                                        
+                                        # データベースに保存
+                                        message_data = {
+                                            'message_id': msg['message-id'],
+                                            'from_address': handler.decode_str(msg['from']),
+                                            'to_address': handler.decode_str(msg['to']),
+                                            'subject': handler.decode_str(msg['subject']) or '(件名なし)',
+                                            'body': body or '(本文なし)',
+                                            'date': email.utils.parsedate_to_datetime(msg['date']),
+                                            'is_sent': email_address in handler.decode_str(msg['from']),
+                                            'folder': str(folder),
+                                            'last_sync': datetime.utcnow()
+                                        }
+                                        
+                                        # 既存のメッセージを更新または新規作成
+                                        if message_data['message_id']:
+                                            existing_message = session.query(EmailMessage).filter_by(
+                                                message_id=message_data['message_id']
+                                            ).first()
+                                            
+                                            if existing_message:
+                                                for key, value in message_data.items():
+                                                    setattr(existing_message, key, value)
+                                                stats['total_updated'] += 1
+                                                stats['folder_stats'][str(folder)]['updated'] += 1
+                                            else:
+                                                new_message = EmailMessage(**message_data)
+                                                session.add(new_message)
+                                                stats['total_new'] += 1
+                                                stats['folder_stats'][str(folder)]['new'] += 1
+                                            
+                                            session.commit()
+                                            print("メッセージを保存しました")
+                                            
+                                    except Exception as e:
+                                        print(f"メッセージパースエラー: {str(e)}")
+                                        traceback.print_exc()
+                                        
                                     stats['total_processed'] += 1
                                     stats['folder_stats'][str(folder)]['processed'] += 1
-                                    
-                                    # データベースへの保存
-                                    if parsed_msg['message_id']:
-                                        existing_message = session.query(EmailMessage)\
-                                            .filter_by(message_id=parsed_msg['message_id'])\
-                                            .first()
-                                            
-                                        if existing_message:
-                                            print(f"メッセージ更新: ID={parsed_msg['message_id']}")
-                                            existing_message.subject = parsed_msg['subject'] or '(件名なし)'
-                                            existing_message.body = parsed_msg['body'] or ''
-                                            existing_message.last_sync = datetime.utcnow()
-                                            stats['total_updated'] += 1
-                                            stats['folder_stats'][str(folder)]['updated'] += 1
-                                        else:
-                                            print(f"新規メッセージ保存: ID={parsed_msg['message_id']}")
-                                            new_message = EmailMessage(
-                                                message_id=parsed_msg['message_id'],
-                                                from_address=parsed_msg['from'],
-                                                to_address=parsed_msg['to'],
-                                                subject=parsed_msg['subject'] or '(件名なし)',
-                                                body=parsed_msg['body'] or '',
-                                                date=parsed_msg['date'],
-                                                is_sent=parsed_msg['is_sent'],
-                                                folder=str(folder),
-                                                last_sync=datetime.utcnow()
-                                            )
-                                            session.add(new_message)
-                                            stats['total_new'] += 1
-                                            stats['folder_stats'][str(folder)]['new'] += 1
-                                        
-                                        session.commit()
-                                        print("メッセージ保存成功")
-                                    else:
-                                        print("メッセージIDなし: スキップ")
                                     
                             except Exception as e:
                                 stats['total_errors'] += 1
@@ -164,7 +192,7 @@ def sync_emails(email, password, imap_server):
         except Exception as e:
             print(f"メール同期エラー: {str(e)}")
             traceback.print_exc()
-            raise e  # エラーを再度発生させて、Celeryに失敗を通知
+            raise e
 
 @celery.task
 def sync_old_contacts():

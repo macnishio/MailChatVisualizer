@@ -80,9 +80,28 @@ def index():
                     )
                 
                 if search_query:
-                    search_terms = search_query.split()
-                    for term in search_terms:
-                        messages_query = messages_query.filter(
+                    # 日本語文字の正規化
+                    import unicodedata
+                    normalized_query = unicodedata.normalize('NFKC', search_query)
+                    
+                    # N-gramの生成（2文字と3文字）
+                    terms = []
+                    for i in range(len(normalized_query)):
+                        if i < len(normalized_query) - 1:
+                            terms.append(normalized_query[i:i+2])
+                        if i < len(normalized_query) - 2:
+                            terms.append(normalized_query[i:i+3])
+                    
+                    # オリジナルの検索語も追加
+                    terms.extend(normalized_query.split())
+                    
+                    # 重複を除去
+                    terms = list(set(terms))
+                    
+                    # 各検索語に対してOR条件を作成
+                    search_conditions = []
+                    for term in terms:
+                        search_conditions.append(
                             or_(
                                 EmailMessage.subject.ilike(f'%{term}%'),
                                 EmailMessage.body.ilike(f'%{term}%'),
@@ -90,6 +109,9 @@ def index():
                                 EmailMessage.to_address.ilike(f'%{term}%')
                             )
                         )
+                    
+                    # すべての条件をORで結合
+                    messages_query = messages_query.filter(or_(*search_conditions))
                 
                 messages_query = messages_query.order_by(EmailMessage.date.desc())
                 
