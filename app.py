@@ -29,7 +29,6 @@ def index():
     page = request.args.get('page', 1, type=int)
     per_page = 20
     
-    # キャッシュから連絡先を取得
     contacts = cache.get('contacts')
     if not contacts:
         try:
@@ -45,55 +44,64 @@ def index():
             print(f"連絡先取得エラー: {str(e)}")
             contacts = []
     
-    messages_list = []
+    messages_data = {
+        'items': [],
+        'total': 0,
+        'has_next': False,
+        'next_page': None
+    }
+    
     selected_contact = request.args.get('contact')
     search_query = request.args.get('search')
-    total_messages = 0
     
     if selected_contact:
         try:
-            with db.session.begin():
-                messages_query = EmailMessage.query.filter(
+            # セッションスコープ内でクエリを実行
+            messages_query = db.session.query(EmailMessage).filter(
+                db.or_(
+                    EmailMessage.from_address == selected_contact,
+                    EmailMessage.to_address == selected_contact
+                )
+            ).order_by(EmailMessage.date.desc())
+            
+            if search_query:
+                messages_query = messages_query.filter(
                     db.or_(
-                        EmailMessage.from_address == selected_contact,
-                        EmailMessage.to_address == selected_contact
+                        EmailMessage.subject.ilike(f'%{search_query}%'),
+                        EmailMessage.body.ilike(f'%{search_query}%')
                     )
-                ).order_by(EmailMessage.date.desc())
-                
-                if search_query:
-                    messages_query = messages_query.filter(
-                        db.or_(
-                            EmailMessage.subject.ilike(f'%{search_query}%'),
-                            EmailMessage.body.ilike(f'%{search_query}%')
-                        )
-                    )
-                
-                # 全メッセージ数を取得
-                total_messages = messages_query.count()
-                
-                # ページネーション
-                messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
-                
-                # 辞書リストに変換
-                messages_list = [{
+                )
+            
+            # 全メッセージ数を取得
+            total = messages_query.count()
+            
+            # 現在のページのメッセージを取得
+            current_messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
+            
+            # セッション内でデータを辞書に変換
+            messages_items = []
+            for msg in current_messages:
+                messages_items.append({
+                    'id': msg.id,
+                    'subject': msg.subject,
                     'body': msg.body,
                     'date': msg.date,
-                    'is_sent': msg.is_sent,
-                    'subject': msg.subject
-                } for msg in messages]
+                    'is_sent': msg.is_sent
+                })
+            
+            messages_data = {
+                'items': messages_items,
+                'total': total,
+                'has_next': (page * per_page) < total,
+                'next_page': page + 1 if (page * per_page) < total else None
+            }
         
         except Exception as e:
             print(f"メッセージ取得エラー: {str(e)}")
-            messages_list = []
     
     return render_template(
         'index.html',
-        messages={
-            'items': messages_list,
-            'total': total_messages,
-            'has_next': (page * per_page) < total_messages,
-            'next_page': page + 1 if (page * per_page) < total_messages else None
-        },
+        messages=messages_data,
         contacts=contacts,
         current_page=page
     )
