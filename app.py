@@ -92,11 +92,19 @@ def settings():
 @app.route('/api/search_contacts')
 def search_contacts():
     query = request.args.get('q', '')
-    if len(query) >= 2:
-        contacts = db.session.query(EmailMessage.from_address).distinct()\
-            .filter(EmailMessage.from_address.ilike(f'%{query}%'))\
-            .limit(10).all()
-        return jsonify([contact[0] for contact in contacts if contact[0]])
+    if len(query) >= 2 and 'email' in session:
+        try:
+            handler = EmailHandler(
+                session['email'],
+                session['password'],
+                session['imap_server']
+            )
+            contacts = handler.get_contacts(query)
+            handler.disconnect()
+            return jsonify(contacts)
+        except Exception as e:
+            print(f"連絡先検索エラー: {str(e)}")
+            return jsonify([])
     return jsonify([])
 
 @app.route('/logout')
