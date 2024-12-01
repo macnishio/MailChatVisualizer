@@ -211,10 +211,27 @@ class EmailHandler:
                     
                     # 検索を実行
                     try:
-                        _, nums = self.conn.search('UTF-8', search_cmd)
-                    except imaplib.IMAP4.error:
+                        if search_query:
+                            # UTF-8でエンコードして検索
+                            search_query_encoded = search_query.encode('utf-8')
+                            _, nums = self.conn.uid('SEARCH', 'CHARSET', 'UTF-8',
+                                                  'OR', 'SUBJECT', search_query_encoded,
+                                                  'OR', 'BODY', search_query_encoded)
+                        else:
+                            # 特定の連絡先のメールのみを検索
+                            email_part = re.search(r'<(.+?)>', contact_email)
+                            if email_part:
+                                email = email_part.group(1)
+                                _, nums = self.conn.uid('SEARCH', 'OR',
+                                                      f'FROM "{email}"',
+                                                      f'TO "{email}"')
+                            else:
+                                _, nums = self.conn.uid('SEARCH', 'ALL')
+                    except imaplib.IMAP4.error as e:
+                        print(f"検索エラー: {str(e)}")
                         # フォールバック: 基本的な検索を試みる
-                        _, nums = self.conn.search(None, 'ALL')
+                        _, nums = self.conn.uid('SEARCH', 'ALL')
+                    
                     if not nums[0]:
                         continue
                         

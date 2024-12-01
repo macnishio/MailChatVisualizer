@@ -6,6 +6,7 @@ from database import db
 from models import EmailMessage, EmailSettings
 from celery_worker import sync_emails
 from datetime import datetime
+from database import session_scope
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "your-secret-key"
@@ -98,23 +99,18 @@ def search_contacts():
         try:
             # 強制的にメール同期を実行
             if 'email' in session:
-                sync_emails(session['email'], session['password'], session['imap_server'])
+                sync_emails.delay(session['email'], session['password'], session['imap_server'])
             
-            # データベースから検索
-            contacts = db.session.query(EmailMessage.from_address)\
-                .filter(EmailMessage.from_address.ilike(f'%{query}%'))\
-                .distinct()\
-                .limit(10)\
-                .all()
-            
-            print(f"検索結果: {contacts}")  # デバッグログ
-            
-            results = []
-            for contact in contacts:
-                if contact[0]:  # Noneでないことを確認
-                    results.append(contact[0])
-            
-            return jsonify(results)
+            with session_scope() as session:
+                contacts = session.query(EmailMessage.from_address)\
+                    .filter(EmailMessage.from_address.ilike(f'%{query}%'))\
+                    .distinct()\
+                    .limit(10)\
+                    .all()
+                
+                print(f"検索結果: {contacts}")  # デバッグログ
+                results = [contact[0] for contact in contacts if contact[0]]
+                return jsonify(results)
         except Exception as e:
             print(f"連絡先検索エラー: {str(e)}")  # デバッグログ
             return jsonify([])
