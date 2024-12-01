@@ -5,6 +5,8 @@ import datetime
 from email.utils import parsedate_to_datetime
 import re
 
+GMAIL_SENT_FOLDER = '&BBkEWQQlBDsENQQ9BD0ESwQ1-/&kAFP4W4IMH8w4TD8MOs-'  # [Gmail]/送信済みメール
+
 class EmailHandler:
     def __init__(self, email_address, password, imap_server):
         self.email_address = email_address
@@ -73,8 +75,6 @@ class EmailHandler:
             if isinstance(folder, bytes):
                 encoded_folder = folder
             else:
-                if '[Gmail]' in folder:
-                    folder = folder.replace('[Gmail]', '&BBkEWQQlBDsENQQ9BD0ESwQ1-')
                 encoded_folder = self.encode_folder_name(folder)
             
             status, data = self.conn.select(encoded_folder, readonly=True)
@@ -107,7 +107,7 @@ class EmailHandler:
             self.check_connection()
             folders = [
                 b'INBOX',
-                self.encode_folder_name('&BBkEWQQlBDsENQQ9BD0ESwQ1-/送信済みメール')
+                self.encode_folder_name(GMAIL_SENT_FOLDER)
             ]
             
             for folder in folders:
@@ -147,7 +147,7 @@ class EmailHandler:
             self.check_connection()
             folders = [
                 b'INBOX',
-                self.encode_folder_name('&BBkEWQQlBDsENQQ9BD0ESwQ1-/送信済みメール')
+                self.encode_folder_name(GMAIL_SENT_FOLDER)
             ]
             
             for folder in folders:
