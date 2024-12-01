@@ -118,16 +118,30 @@ def index():
                     search_conditions = []
                     
                     for term in search_terms:
+                        # 全角文字を考慮した検索条件
+                        normalized_term = term
                         condition = or_(
-                            EmailMessage.subject.ilike(f'%{term}%'),
-                            EmailMessage.body.ilike(f'%{term}%'),
-                            EmailMessage.from_address.ilike(f'%{term}%'),
-                            EmailMessage.to_address.ilike(f'%{term}%')
+                            EmailMessage.subject.ilike(f'%{normalized_term}%'),
+                            EmailMessage.body.ilike(f'%{normalized_term}%'),
+                            EmailMessage.from_address.ilike(f'%{normalized_term}%'),
+                            EmailMessage.to_address.ilike(f'%{normalized_term}%')
                         )
                         search_conditions.append(condition)
                     
                     if search_conditions:
+                        # 複数の検索語をAND条件で結合
                         messages_query = messages_query.filter(and_(*search_conditions))
+                        
+                        # 検索結果を関連度順にソート
+                        messages_query = messages_query.order_by(
+                            # 件名または本文に完全一致する場合を優先
+                            case([(or_(
+                                EmailMessage.subject.ilike(f'%{term}%'),
+                                EmailMessage.body.ilike(f'%{term}%')
+                            ), 1)], else_=0).desc(),
+                            # 次に日付の新しい順
+                            EmailMessage.date.desc()
+                        )
                 
                 messages_query = messages_query.order_by(EmailMessage.date.desc())
                 
