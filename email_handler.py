@@ -58,20 +58,26 @@ class EmailHandler:
 
     def encode_folder_name(self, folder):
         """フォルダー名をUTF-7でエンコードする"""
-        if isinstance(folder, str):
+        if isinstance(folder, bytes):
+            return folder
+        try:
+            # UTF-7でエンコード
             return folder.encode('utf-7')
-        return folder
+        except Exception as e:
+            print(f"フォルダー名エンコードエラー: {str(e)}")
+            return folder
 
     def select_folder(self, folder):
         """フォルダーを選択する"""
         try:
-            if '[Gmail]' in folder:
-                folder = folder.replace('[Gmail]', '&BBkEWQQlBDsENQQ9BD0ESwQ1-')
+            if isinstance(folder, bytes):
+                encoded_folder = folder
+            else:
+                if '[Gmail]' in folder:
+                    folder = folder.replace('[Gmail]', '&BBkEWQQlBDsENQQ9BD0ESwQ1-')
+                encoded_folder = self.encode_folder_name(folder)
             
-            # フォルダー名をUTF-7でエンコード
-            encoded_folder = self.encode_folder_name(folder)
             status, data = self.conn.select(encoded_folder, readonly=True)
-            
             if status != 'OK':
                 raise Exception(f"選択エラー: {data[0].decode('utf-8', errors='replace')}")
             return True
@@ -100,7 +106,7 @@ class EmailHandler:
         try:
             self.check_connection()
             folders = [
-                'INBOX',
+                b'INBOX',
                 self.encode_folder_name('&BBkEWQQlBDsENQQ9BD0ESwQ1-/送信済みメール')
             ]
             
@@ -116,7 +122,7 @@ class EmailHandler:
                             email_body = msg_data[0][1]
                             msg = email.message_from_bytes(email_body)
                             
-                            if folder == 'INBOX':
+                            if folder == b'INBOX':
                                 from_addr = self.decode_str(msg['from'])
                                 if from_addr:
                                     contacts.add(from_addr)
@@ -140,7 +146,7 @@ class EmailHandler:
         try:
             self.check_connection()
             folders = [
-                'INBOX',
+                b'INBOX',
                 self.encode_folder_name('&BBkEWQQlBDsENQQ9BD0ESwQ1-/送信済みメール')
             ]
             
