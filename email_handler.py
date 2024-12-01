@@ -57,13 +57,15 @@ class EmailHandler:
                 
         return sorted(list(contacts))
 
-    def get_conversation(self, contact_email):
+    def get_conversation(self, contact_email, search_query=None):
         messages = []
         
         for folder in ['INBOX', '"[Gmail]/Sent Mail"']:
             try:
                 self.conn.select(folder)
                 search_criterion = f'(OR FROM "{contact_email}" TO "{contact_email}")'
+                if search_query:
+                    search_criterion = f'({search_criterion} SUBJECT "{search_query}" TEXT "{search_query}")'
                 _, message_numbers = self.conn.search(None, search_criterion)
                 
                 for num in message_numbers[0].split():
@@ -80,6 +82,10 @@ class EmailHandler:
                     else:
                         body = msg.get_payload(decode=True).decode()
                     
+                    # 検索クエリがある場合、本文で絞り込み
+                    if search_query and search_query.lower() not in body.lower():
+                        continue
+                    
                     date = parsedate_to_datetime(msg['date'])
                     from_addr = self.decode_str(msg['from'])
                     is_sent = self.email_address in from_addr
@@ -90,7 +96,8 @@ class EmailHandler:
                         'is_sent': is_sent,
                         'from': from_addr
                     })
-            except:
+            except Exception as e:
+                print(f"Error in get_conversation: {str(e)}")
                 continue
         
         return sorted(messages, key=lambda x: x['date'])

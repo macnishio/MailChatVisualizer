@@ -114,6 +114,10 @@ html, body {
     height: 100%;
     color: #6c757d;
 }
+.search-form {
+    max-width: 300px;
+}
+
 
 /* Responsive Design */
 @media (max-width: 768px) {

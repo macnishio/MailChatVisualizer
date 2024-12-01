@@ -33,8 +33,9 @@ def index():
         contacts = email_handler.get_contacts()
         
         selected_contact = request.args.get('contact')
+        search_query = request.args.get('search')
         if selected_contact:
-            messages = email_handler.get_conversation(selected_contact)
+            messages = email_handler.get_conversation(selected_contact, search_query)
     except Exception as e:
         flash(f"Error: {str(e)}", "error")
     finally:
