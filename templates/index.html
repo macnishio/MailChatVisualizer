@@ -6,7 +6,7 @@
         <!-- Contacts Sidebar -->
         <div class="col-md-3 contacts-sidebar">
             <div class="contacts-header">
-                <h5>Contacts</h5>
+                <h5>Contacts ({{ contacts|length }}件)</h5>
                 <div class="contact-search">
                     <input type="text" 
                            id="contactSearch" 
@@ -39,9 +39,13 @@
                         <div class="chat-header-info">
                             <h5 class="mb-0">{{ request.args.get('contact') }}</h5>
                             {% if request.args.get('search') %}
-                            <div class="search-result-count">
-                                検索結果: {{ messages|length }}件
-                            </div>
+                                <div class="search-result-count">
+                                    検索結果: {{ messages.items|length }}件
+                                </div>
+                            {% else %}
+                                <div class="total-messages-count">
+                                    全{{ messages.total }}件のメッセージ
+                                </div>
                             {% endif %}
                         </div>
                         <form class="d-flex search-form" method="GET">
