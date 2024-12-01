@@ -19,6 +19,11 @@ class EmailMessage(db.Model):
     folder = db.Column(db.String(100))
     last_sync = db.Column(db.DateTime, default=datetime.utcnow)
 
+    __table_args__ = (
+        db.Index('idx_email_search', 'from_address', 'to_address'),
+        db.Index('idx_email_content', 'subject', 'body'),
+    )
+
     def to_dict(self):
         return {
             'id': self.id,

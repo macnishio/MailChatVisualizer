@@ -19,22 +19,51 @@ def index():
     if 'email' not in session:
         return redirect(url_for('settings'))
     
+    # メール同期を強制実行
+    try:
+        handler = EmailHandler(
+            session['email'],
+            session['password'],
+            session['imap_server']
+        )
+        messages = handler.get_contacts()
+        
+        # データベースに保存
+        with session_scope() as db_session:
+            for msg in messages:
+                # 既存の連絡先をチェック
+                existing = db_session.query(EmailMessage).filter_by(
+                    from_address=msg
+                ).first()
+                
+                if not existing:
+                    new_message = EmailMessage(
+                        from_address=msg,
+                        date=datetime.utcnow()
+                    )
+                    db_session.add(new_message)
+        
+        handler.disconnect()
+    except Exception as e:
+        print(f"初期同期エラー: {str(e)}")
+    
+    # 以降は既存のコード
     page = request.args.get('page', 1, type=int)
     per_page = 20
     contact_search = request.args.get('contact_search', '')
     
-    # Get unique contacts from cached messages
     contacts_query = db.session.query(EmailMessage.from_address).distinct()
     if contact_search:
-        contacts_query = contacts_query.filter(EmailMessage.from_address.ilike(f'%{contact_search}%'))
+        contacts_query = contacts_query.filter(
+            EmailMessage.from_address.ilike(f'%{contact_search}%')
+        )
     contacts = [contact[0] for contact in contacts_query.all() if contact[0]]
-
+    
     messages = []
     selected_contact = request.args.get('contact')
     search_query = request.args.get('search')
     
     if selected_contact:
-        # Query cached messages
         messages_query = EmailMessage.query.filter(
             db.or_(
                 EmailMessage.from_address == selected_contact,
@@ -50,12 +79,11 @@ def index():
                 )
             )
         
-        messages = messages_query.paginate(page=page, per_page=per_page, error_out=False)
-        
-        # Trigger async sync if needed
-        last_sync = EmailMessage.query.order_by(EmailMessage.last_sync.desc()).first()
-        if not last_sync or (datetime.utcnow() - last_sync.last_sync).seconds > 300:
-            sync_emails.delay(session['email'], session['password'], session['imap_server'])
+        messages = messages_query.paginate(
+            page=page, 
+            per_page=per_page, 
+            error_out=False
+        )
     
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return jsonify({
