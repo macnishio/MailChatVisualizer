@@ -1,134 +1,143 @@
 from celery import Celery
-from email_handler import EmailHandler
+from datetime import datetime, timedelta
+from sqlalchemy import or_
 from models import EmailMessage
-from database import db, session_scope
-from datetime import datetime
-import imaplib
-from flask import current_app
+from database import session_scope
+from email_handler import EmailHandler
 
-celery = Celery('tasks', broker='redis://localhost:6379/0')
+def make_celery(app_name=__name__):
+    celery = Celery(
+        app_name,
+        broker='redis://localhost:6379/0',
+        backend='redis://localhost:6379/0'
+    )
+    return celery
 
-def create_app():
-    from app import app
-    return app
+celery = make_celery('email_tasks')
 
 @celery.task
 def sync_emails(email, password, imap_server):
+    """メールを同期するタスク"""
+    from app import create_app
+    
+    print(f"メール同期開始: {email}, サーバー: {imap_server}")
     app = create_app()
-    with app.app_context():
-        try:
-            with session_scope() as session:
-                handler = EmailHandler(email, password, imap_server)
-                folders = [b'INBOX']
-                sent_folder = handler.get_gmail_folders()
-                if sent_folder:
-                    folders.append(sent_folder)
-
-                for folder in folders:
-                    if not handler.select_folder(folder):
-                        continue
-
-                    try:
-                        _, messages = handler.conn.search(None, 'ALL')
-                        for num in messages[0].split():
-                            try:
-                                _, msg_data = handler.conn.fetch(num, '(RFC822)')
-                                email_body = msg_data[0][1]
-                                msg = handler.parse_email_message(email_body)
-                                
-                                if msg['message_id']:  # メッセージIDが存在する場合のみ処理
-                                    # Check if message already exists
-                                    existing_message = session.query(EmailMessage)\
-                                        .filter_by(message_id=msg['message_id'])\
-                                        .first()
-                                    
-                                    if not existing_message:
-                                        print(f"新規メッセージを保存: ID={msg['message_id']}, Subject={msg['subject']}")
-                                        new_message = EmailMessage(
-                                            message_id=msg['message_id'],
-                                            from_address=msg['from'],
-                                            to_address=msg['to'],
-                                            subject=msg['subject'],
-                                            body=msg['body'],
-                                            date=msg['date'],
-                                            is_sent=msg['is_sent'],
-                                            folder=str(folder),
-                                            last_sync=datetime.utcnow()
-                                        )
-                                        session.add(new_message)
-                                        session.flush()  # 即座にデータベースに反映
-                                    
-                            except Exception as e:
-                                print(f"Message processing error: {str(e)}")
-                                continue
-                            
-                    except Exception as e:
-                        print(f"Folder processing error ({folder}): {str(e)}")
-                        continue
-
-                handler.disconnect()
-                
-        except Exception as e:
-            print(f"Email sync error: {str(e)}")
-
-# Schedule periodic sync
-@celery.task
-def sync_old_contacts(email, password, imap_server, offset=100, batch_size=100):
+    
     with app.app_context():
         try:
             handler = EmailHandler(email, password, imap_server)
+            print("IMAPサーバーに接続成功")
+            
             folders = [b'INBOX']
             sent_folder = handler.get_gmail_folders()
             if sent_folder:
                 folders.append(sent_folder)
+                print(f"送信済みフォルダを追加: {sent_folder}")
+            
+            total_processed = 0
+            total_new = 0
+            total_errors = 0
 
             for folder in folders:
                 if not handler.select_folder(folder):
+                    print(f"フォルダ選択失敗: {folder}")
                     continue
-
+                
+                print(f"\nフォルダ処理開始: {folder}")
                 try:
-                    _, messages = handler.conn.sort(b'DATE', b'UTF-8', b'ALL')
-                    message_nums = messages[0].split()[:-offset]  # 古いメール
+                    _, messages = handler.conn.search(None, 'ALL')
+                    message_count = len(messages[0].split())
+                    print(f"フォルダ内のメッセージ数: {message_count}")
                     
-                    for i in range(0, len(message_nums), batch_size):
-                        batch = message_nums[i:i + batch_size]
-                        for num in batch:
-                            try:
+                    for num in messages[0].split():
+                        try:
+                            with session_scope() as session:
                                 _, msg_data = handler.conn.fetch(num, '(RFC822)')
                                 email_body = msg_data[0][1]
                                 msg = handler.parse_email_message(email_body)
+                                total_processed += 1
                                 
-                                # データベースに保存
-                                with session_scope() as session:
-                                    existing = session.query(EmailMessage).filter_by(
-                                        message_id=msg['message_id']
-                                    ).first()
-                                    
-                                    if not existing:
-                                        new_message = EmailMessage(
-                                            message_id=msg['message_id'],
-                                            from_address=msg['from'],
-                                            to_address=msg['to'],
-                                            subject=msg['subject'],
-                                            body=msg['body'],
-                                            date=msg['date'],
-                                            is_sent=msg['is_sent'],
-                                            folder=str(folder)
-                                        )
-                                        session.add(new_message)
-                                        
-                            except Exception as e:
-                                print(f"メッセージ処理エラー: {str(e)}")
-                                continue
+                                if not msg['message_id']:
+                                    print(f"メッセージID不足: スキップ")
+                                    continue
                                 
+                                # トランザクション内でメッセージの存在確認
+                                existing_message = session.query(EmailMessage)\
+                                    .filter_by(message_id=msg['message_id'])\
+                                    .first()
+                                
+                                if existing_message:
+                                    # 既存メッセージの更新が必要か確認
+                                    if (existing_message.subject != msg['subject'] or 
+                                        existing_message.body != msg['body']):
+                                        print(f"メッセージ更新: ID={msg['message_id']}")
+                                        existing_message.subject = msg['subject']
+                                        existing_message.body = msg['body']
+                                        existing_message.last_sync = datetime.utcnow()
+                                else:
+                                    print(f"新規メッセージ保存: ID={msg['message_id']}")
+                                    new_message = EmailMessage(
+                                        message_id=msg['message_id'],
+                                        from_address=msg['from'],
+                                        to_address=msg['to'],
+                                        subject=msg['subject'],
+                                        body=msg['body'],
+                                        date=msg['date'],
+                                        is_sent=msg['is_sent'],
+                                        folder=str(folder),
+                                        last_sync=datetime.utcnow()
+                                    )
+                                    session.add(new_message)
+                                    total_new += 1
+                                
+                                session.commit()
+                                
+                        except Exception as e:
+                            total_errors += 1
+                            print(f"メッセージ処理エラー: {str(e)}")
+                            import traceback
+                            traceback.print_exc()
+                            continue
+                            
                 except Exception as e:
-                    print(f"フォルダー処理エラー ({folder}): {str(e)}")
+                    print(f"フォルダ処理エラー ({folder}): {str(e)}")
                     continue
 
             handler.disconnect()
-            
+            print(f"\n同期完了サマリー:")
+            print(f"処理済みメッセージ数: {total_processed}")
+            print(f"新規保存メッセージ数: {total_new}")
+            print(f"エラー数: {total_errors}")
+                
         except Exception as e:
-            print(f"バックグラウンド同期エラー: {str(e)}")
+            print(f"メール同期エラー: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+@celery.task
+def sync_old_contacts():
+    """古いメッセージを定期的に同期"""
+    from app import create_app
+    
+    app = create_app()
+    with app.app_context():
+        try:
+            with session_scope() as session:
+                # 24時間以上同期していないメッセージを取得
+                old_messages = session.query(EmailMessage)\
+                    .filter(or_(
+                        EmailMessage.last_sync == None,
+                        EmailMessage.last_sync <= datetime.utcnow() - timedelta(hours=24)
+                    ))\
+                    .all()
+                
+                for msg in old_messages:
+                    msg.last_sync = None
+                session.commit()
+                
+        except Exception as e:
+            print(f"古いメッセージの同期エラー: {str(e)}")
+            traceback.print_exc()
 
 @celery.on_after_configure.connect
 def setup_periodic_tasks(sender, **kwargs):

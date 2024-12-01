@@ -40,46 +40,77 @@ class EmailHandler:
     def parse_email_message(self, email_body):
         """メールメッセージをパースしてディクショナリを返す"""
         msg = email.message_from_bytes(email_body)
+        print(f"メッセージヘッダー解析開始: From={msg['from']}, Subject={msg['subject']}")
         
         body = ""
         if msg.is_multipart():
+            print("マルチパートメッセージを処理中...")
             # マルチパートメッセージの処理
             for part in msg.walk():
                 content_type = part.get_content_type()
+                content_charset = part.get_content_charset()
+                print(f"パート処理: タイプ={content_type}, 文字セット={content_charset}")
+                
                 if content_type == "text/plain":
                     try:
                         payload = part.get_payload(decode=True)
                         if payload:
-                            charset = part.get_content_charset() or 'utf-8'
-                            body = payload.decode(charset, errors='replace')
-                            break
+                            # 文字コードの検出と変換
+                            charset = content_charset or 'utf-8'
+                            try:
+                                body = payload.decode(charset)
+                                print(f"本文デコード成功: 文字セット={charset}, 長さ={len(body)}")
+                                break
+                            except UnicodeDecodeError:
+                                print(f"指定された文字セット{charset}でデコード失敗、代替文字セットを試行")
+                                for alt_charset in ['utf-8', 'iso-2022-jp', 'shift-jis', 'euc-jp']:
+                                    try:
+                                        body = payload.decode(alt_charset)
+                                        print(f"代替文字セット{alt_charset}でデコード成功")
+                                        break
+                                    except UnicodeDecodeError:
+                                        continue
                     except Exception as e:
                         print(f"メッセージ本文のデコードエラー: {str(e)}")
                         continue
         else:
+            print("シングルパートメッセージを処理中...")
             # シングルパートメッセージの処理
             try:
                 payload = msg.get_payload(decode=True)
                 if payload:
                     charset = msg.get_content_charset() or 'utf-8'
-                    body = payload.decode(charset, errors='replace')
+                    try:
+                        body = payload.decode(charset)
+                        print(f"本文デコード成功: 文字セット={charset}, 長さ={len(body)}")
+                    except UnicodeDecodeError:
+                        print(f"指定された文字セット{charset}でデコード失敗、代替文字セットを試行")
+                        for alt_charset in ['utf-8', 'iso-2022-jp', 'shift-jis', 'euc-jp']:
+                            try:
+                                body = payload.decode(alt_charset)
+                                print(f"代替文字セット{alt_charset}でデコード成功")
+                                break
+                            except UnicodeDecodeError:
+                                continue
             except Exception as e:
                 print(f"シングルパートメッセージのデコードエラー: {str(e)}")
 
-        # メッセージIDが存在しない場合は生成
+        # メッセージIDの処理
         message_id = msg['message-id']
         if not message_id:
             from hashlib import md5
             unique_str = f"{msg['from']}{msg['to']}{msg['date']}{body[:100]}"
             message_id = f"<{md5(unique_str.encode()).hexdigest()}@generated>"
+            print(f"メッセージID生成: {message_id}")
 
         # 日付の処理
         try:
             date = parsedate_to_datetime(msg['date'])
-        except:
+        except Exception as e:
+            print(f"日付パースエラー: {str(e)}")
             date = datetime.utcnow()
 
-        return {
+        result = {
             'message_id': message_id,
             'from': self.decode_str(msg['from']),
             'to': self.decode_str(msg['to']),
@@ -88,6 +119,8 @@ class EmailHandler:
             'date': date,
             'is_sent': self.email_address in self.decode_str(msg['from'])
         }
+        print(f"メッセージ解析完了: ID={message_id}, Subject={result['subject']}, BodyLength={len(body)}")
+        return result
 
     def decode_str(self, s):
         """文字列をデコードする"""

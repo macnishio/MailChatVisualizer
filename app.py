@@ -5,23 +5,31 @@ from email_handler import EmailHandler
 from werkzeug.security import generate_password_hash, check_password_hash
 from database import db
 from models import EmailMessage, EmailSettings
-from celery_worker import sync_emails
 from datetime import datetime
 from database import session_scope
 from flask_caching import Cache
-from sqlalchemy import text
+from sqlalchemy import text, or_
 
-app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "your-secret-key"
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///email_chat.db"
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+def create_app():
+    app = Flask(__name__)
+    app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "your-secret-key"
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///email_chat.db"
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    
+    # キャッシュ設定
+    cache = Cache(config={'CACHE_TYPE': 'simple'})
+    cache.init_app(app)
+    db.init_app(app)
+    
+    return app
+
+app = create_app()
 
 # キャッシュ設定
 cache = Cache(config={
     'CACHE_TYPE': 'simple'
 })
 cache.init_app(app)
-db.init_app(app)
 
 @app.route('/')
 def index():
@@ -49,7 +57,7 @@ def index():
     
     # メッセージデータの初期化
     messages_dict = {
-        'message_list': [],  # itemsをmessage_listに変更
+        'message_list': [],
         'total': 0,
         'has_next': False,
         'next_page': None
@@ -58,26 +66,35 @@ def index():
     selected_contact = request.args.get('contact')
     search_query = request.args.get('search')
     
-    if selected_contact:
+    if selected_contact or search_query:
         try:
             with db.session.begin():
-                messages_query = EmailMessage.query.filter(
-                    db.or_(
-                        EmailMessage.from_address == selected_contact,
-                        EmailMessage.to_address == selected_contact
+                messages_query = EmailMessage.query
+
+                if selected_contact:
+                    messages_query = messages_query.filter(
+                        or_(
+                            EmailMessage.from_address == selected_contact,
+                            EmailMessage.to_address == selected_contact
+                        )
                     )
-                ).order_by(EmailMessage.date.desc())
+                
+                if search_query:
+                    search_terms = search_query.split()
+                    for term in search_terms:
+                        messages_query = messages_query.filter(
+                            or_(
+                                EmailMessage.subject.ilike(f'%{term}%'),
+                                EmailMessage.body.ilike(f'%{term}%'),
+                                EmailMessage.from_address.ilike(f'%{term}%'),
+                                EmailMessage.to_address.ilike(f'%{term}%')
+                            )
+                        )
+                
+                messages_query = messages_query.order_by(EmailMessage.date.desc())
                 
                 # デバッグ用：クエリの内容を出力
                 print(f"SQL Query: {messages_query}")
-                
-                if search_query:
-                    messages_query = messages_query.filter(
-                        db.or_(
-                            EmailMessage.subject.ilike(f'%{search_query}%'),
-                            EmailMessage.body.ilike(f'%{search_query}%')
-                        )
-                    )
                 
                 # デバッグ用：取得したメッセージの数を出力
                 total = messages_query.count()
@@ -97,7 +114,9 @@ def index():
                     'subject': msg.subject,
                     'body': msg.body,
                     'date': msg.date,
-                    'is_sent': msg.is_sent
+                    'is_sent': msg.is_sent,
+                    'from_address': msg.from_address,
+                    'to_address': msg.to_address
                 } for msg in current_messages]
                 
                 messages_dict['total'] = total
@@ -106,14 +125,14 @@ def index():
                 
         except Exception as e:
             print(f"メッセージ取得エラー: {str(e)}")
-            traceback.print_exc()  # スタックトレースを出力
+            traceback.print_exc()
     
-    # テンプレートにデータを渡す
     return render_template(
         'index.html',
         messages=messages_dict,
         contacts=contacts,
-        current_page=page
+        current_page=page,
+        search_query=search_query
     )
 
 @app.route('/settings', methods=['GET', 'POST'])
@@ -152,7 +171,12 @@ def search_contacts():
         try:
             contacts = EmailMessage.query\
                 .with_entities(EmailMessage.from_address)\
-                .filter(EmailMessage.from_address.ilike(f'%{query}%'))\
+                .filter(
+                    or_(
+                        EmailMessage.from_address.ilike(f'%{query}%'),
+                        EmailMessage.to_address.ilike(f'%{query}%')
+                    )
+                )\
                 .distinct()\
                 .limit(10)\
                 .all()
@@ -164,6 +188,54 @@ def search_contacts():
             print(f"連絡先検索エラー: {str(e)}")
             return jsonify([])
     return jsonify([])
+
+@app.route('/api/search_messages')
+def search_messages():
+    if 'email' not in session:
+        return jsonify({'messages': [], 'total': 0})
+        
+    query = request.args.get('q', '')
+    page = request.args.get('page', 1, type=int)
+    per_page = 20
+    
+    try:
+        messages_query = EmailMessage.query
+        
+        if query:
+            search_terms = query.split()
+            for term in search_terms:
+                messages_query = messages_query.filter(
+                    or_(
+                        EmailMessage.subject.ilike(f'%{term}%'),
+                        EmailMessage.body.ilike(f'%{term}%'),
+                        EmailMessage.from_address.ilike(f'%{term}%'),
+                        EmailMessage.to_address.ilike(f'%{term}%')
+                    )
+                )
+        
+        total = messages_query.count()
+        messages = messages_query.order_by(EmailMessage.date.desc())\
+            .offset((page - 1) * per_page)\
+            .limit(per_page)\
+            .all()
+            
+        return jsonify({
+            'messages': [{
+                'id': msg.id,
+                'subject': msg.subject,
+                'body': msg.body,
+                'date': msg.date.isoformat(),
+                'from_address': msg.from_address,
+                'to_address': msg.to_address,
+                'is_sent': msg.is_sent
+            } for msg in messages],
+            'total': total,
+            'has_next': (page * per_page) < total,
+            'next_page': page + 1 if (page * per_page) < total else None
+        })
+    except Exception as e:
+        print(f"メッセージ検索エラー: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/logout')
 def logout():
