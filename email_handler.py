@@ -139,11 +139,12 @@ class EmailHandler:
                 criteria.append(f'(OR FROM "{email}" TO "{email}")')
         if search_query:
             try:
-                # UTF-7でエンコード
-                encoded_query = search_query.encode('utf-7').decode('ascii')
-                criteria.append(f'(OR SUBJECT {encoded_query} BODY {encoded_query})')
+                # 検索クエリをUTF-8で処理
+                search_terms = search_query.split()
+                for term in search_terms:
+                    criteria.append(f'(OR (OR SUBJECT "{term}" BODY "{term}") TEXT "{term}")')
             except Exception as e:
-                print(f"検索クエリエンコードエラー: {str(e)}")
+                print(f"検索クエリエラー: {str(e)}")
         return ' '.join(criteria) if criteria else 'ALL'
 
     def get_contacts(self, search_query=None):
@@ -201,12 +202,19 @@ class EmailHandler:
                     continue
                 
                 try:
+                    # メールボックスを確実に選択
+                    self.conn.select(folder)
+                    
+                    # 検索条件を構築
                     criteria = self.build_search_criteria(contact_email, search_query)
-                    if criteria != 'ALL':
-                        search_cmd = f'CHARSET UTF-8 {criteria}'
-                    else:
-                        search_cmd = criteria
-                    _, nums = self.conn.search(None, search_cmd)
+                    search_cmd = f'CHARSET UTF-8 {criteria}' if criteria != 'ALL' else 'ALL'
+                    
+                    # 検索を実行
+                    try:
+                        _, nums = self.conn.search('UTF-8', search_cmd)
+                    except imaplib.IMAP4.error:
+                        # フォールバック: 基本的な検索を試みる
+                        _, nums = self.conn.search(None, 'ALL')
                     if not nums[0]:
                         continue
                         
