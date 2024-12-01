@@ -56,15 +56,24 @@ class EmailHandler:
                 result += str(part)
         return result
 
+    def encode_folder_name(self, folder):
+        """フォルダー名をUTF-7でエンコードする"""
+        if isinstance(folder, str):
+            return folder.encode('utf-7')
+        return folder
+
     def select_folder(self, folder):
         """フォルダーを選択する"""
         try:
             if '[Gmail]' in folder:
-                # Gmailフォルダー名を適切にエンコード
                 folder = folder.replace('[Gmail]', '&BBkEWQQlBDsENQQ9BD0ESwQ1-')
-            status, data = self.conn.select(f'"{folder}"', readonly=True)
+            
+            # フォルダー名をUTF-7でエンコード
+            encoded_folder = self.encode_folder_name(folder)
+            status, data = self.conn.select(encoded_folder, readonly=True)
+            
             if status != 'OK':
-                raise Exception(f"選択エラー: {data[0].decode()}")
+                raise Exception(f"選択エラー: {data[0].decode('utf-8', errors='replace')}")
             return True
         except Exception as e:
             print(f"フォルダー選択エラー ({folder}): {str(e)}")
@@ -90,7 +99,12 @@ class EmailHandler:
         contacts = set()
         try:
             self.check_connection()
-            for folder in ['INBOX', '&BBkEWQQlBDsENQQ9BD0ESwQ1-/送信済みメール']:
+            folders = [
+                'INBOX',
+                self.encode_folder_name('&BBkEWQQlBDsENQQ9BD0ESwQ1-/送信済みメール')
+            ]
+            
+            for folder in folders:
                 if not self.select_folder(folder):
                     continue
 
@@ -125,7 +139,12 @@ class EmailHandler:
         messages = []
         try:
             self.check_connection()
-            for folder in ['INBOX', '&BBkEWQQlBDsENQQ9BD0ESwQ1-/送信済みメール']:
+            folders = [
+                'INBOX',
+                self.encode_folder_name('&BBkEWQQlBDsENQQ9BD0ESwQ1-/送信済みメール')
+            ]
+            
+            for folder in folders:
                 if not self.select_folder(folder):
                     continue
                 
