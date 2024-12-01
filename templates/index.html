@@ -62,16 +62,25 @@
                     </div>
                 </div>
                 <div class="messages-container">
-                    {% for message in messages %}
-                        <div class="message {% if message.is_sent %}sent{% else %}received{% endif %}">
-                            <div class="message-content">
-                                {{ message.body }}
-                                <div class="message-time">
-                                    {{ message.date.strftime('%Y-%m-%d %H:%M') }}
+                    {% if messages and messages.items %}
+                        {% for message in messages.items %}
+                            <div class="message {% if message.is_sent %}sent{% else %}received{% endif %}">
+                                <div class="message-content">
+                                    {% if message.subject %}
+                                        <div class="message-subject">{{ message.subject }}</div>
+                                    {% endif %}
+                                    <div class="message-body">{{ message.body }}</div>
+                                    <div class="message-time">
+                                        {{ message.date.strftime('%Y-%m-%d %H:%M') }}
+                                    </div>
                                 </div>
                             </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="no-messages">
+                            <p>No messages found</p>
                         </div>
-                    {% endfor %}
+                    {% endif %}
                 </div>
             {% else %}
                 <div class="no-chat-selected">

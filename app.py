@@ -40,21 +40,18 @@ def index():
             )
             contacts = handler.get_contacts()
             handler.disconnect()
-            
-            # キャッシュに保存（1時間）
             cache.set('contacts', contacts, timeout=3600)
         except Exception as e:
             print(f"連絡先取得エラー: {str(e)}")
             contacts = []
     
-    # メッセージの取得とページネーション
-    messages_pagination = None
+    messages = []
     selected_contact = request.args.get('contact')
     search_query = request.args.get('search')
     
     if selected_contact:
         try:
-            # セッションスコープ内でクエリを実行
+            # 新しいセッションスコープでクエリを実行
             with db.session.begin():
                 messages_query = EmailMessage.query.filter(
                     db.or_(
@@ -71,36 +68,37 @@ def index():
                         )
                     )
                 
-                # オプション設定でレイジーローディングを有効化
-                messages_pagination = messages_query.options(
-                    db.joinedload('*')
-                ).paginate(
-                    page=page,
-                    per_page=per_page,
-                    error_out=False
-                )
+                # すべてのデータを一度にロード
+                messages = messages_query.all()
                 
-                # すべての必要なデータをセッション内でロード
-                if messages_pagination.items:
-                    for message in messages_pagination.items:
-                        db.session.refresh(message)
+                # 必要な属性を辞書に変換
+                messages = [{
+                    'body': msg.body,
+                    'date': msg.date,
+                    'is_sent': msg.is_sent,
+                    'subject': msg.subject
+                } for msg in messages]
         
         except Exception as e:
             print(f"メッセージ取得エラー: {str(e)}")
-            messages_pagination = None
+            messages = []
+    
+    # ページネーション用の処理
+    start = (page - 1) * per_page
+    end = start + per_page
+    current_messages = messages[start:end] if messages else []
+    total = len(messages)
     
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        if messages_pagination:
-            return jsonify({
-                'messages': [msg.to_dict() for msg in messages_pagination.items],
-                'has_next': messages_pagination.has_next,
-                'next_page': messages_pagination.next_num if messages_pagination.has_next else None
-            })
-        return jsonify({'messages': [], 'has_next': False, 'next_page': None})
+        return jsonify({
+            'messages': current_messages,
+            'has_next': end < total,
+            'next_page': page + 1 if end < total else None
+        })
     
     return render_template(
         'index.html',
-        messages=messages_pagination if messages_pagination else [],
+        messages={'items': current_messages, 'total': total},
         contacts=contacts
     )
 
