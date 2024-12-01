@@ -61,9 +61,9 @@ def sync_emails(email, password, imap_server):
                 
                 try:
                     _, messages = handler.conn.search(None, 'ALL')
-                    message_nums = messages[0].split()
+                    message_nums = messages[0].split()[-100:]  # 最新100件のみ
                     message_count = len(message_nums)
-                    print(f"フォルダ内のメッセージ数: {message_count}")
+                    print(f"フォルダ内のメッセージ数（最新100件）: {message_count}")
                     
                     # バッチ処理用の設定
                     batch_size = 50

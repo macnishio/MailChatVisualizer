@@ -4,6 +4,7 @@ from email.header import decode_header
 import datetime
 from email.utils import parsedate_to_datetime
 import re
+import traceback
 
 class EmailHandler:
     def __init__(self, email_address, password, imap_server):
@@ -40,86 +41,61 @@ class EmailHandler:
     def parse_email_message(self, email_body):
         """メールメッセージをパースしてディクショナリを返す"""
         msg = email.message_from_bytes(email_body)
-        body = None
-        subject = None
         
-        # デバッグ情報の出力
-        print("\n=== メッセージパース開始 ===")
-        print(f"Content-Type: {msg.get_content_type()}")
-        print(f"Is Multipart: {msg.is_multipart()}")
+        # デバッグ情報
+        print(f"Message-ID: {msg['message-id']}")
+        print(f"Subject: {msg['subject']}")
+        print(f"From: {msg['from']}")
+        print(f"To: {msg['to']}")
         
         try:
-            # 件名の取得とデコード
             subject = self.decode_str(msg['subject'])
-            print(f"Original subject: {msg['subject']}")
-            print(f"Decoded subject: {subject}")
+            body = None
             
-            # 本文の取得とデコード
             if msg.is_multipart():
                 for part in msg.walk():
-                    if part.get_content_maintype() == 'multipart':
-                        continue
                     if part.get_content_type() == "text/plain":
-                        try:
-                            payload = part.get_payload(decode=True)
-                            if payload:
-                                charset = part.get_content_charset()
-                                if charset:
-                                    body = payload.decode(charset)
-                                else:
-                                    # 文字コードの推測を試みる
-                                    for encoding in ['utf-8', 'iso-2022-jp', 'shift-jis', 'euc-jp']:
-                                        try:
-                                            body = payload.decode(encoding)
-                                            break
-                                        except UnicodeDecodeError:
-                                            continue
-                                if body:
-                                    break
-                        except Exception as e:
-                            print(f"Part decode error: {str(e)}")
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            charset = part.get_content_charset() or 'utf-8'
+                            try:
+                                body = payload.decode(charset)
+                                break
+                            except UnicodeDecodeError:
+                                body = payload.decode('utf-8', errors='replace')
+                                break
             else:
                 payload = msg.get_payload(decode=True)
                 if payload:
-                    charset = msg.get_content_charset()
-                    if charset:
+                    charset = msg.get_content_charset() or 'utf-8'
+                    try:
                         body = payload.decode(charset)
-                    else:
-                        # 文字コードの推測を試みる
-                        for encoding in ['utf-8', 'iso-2022-jp', 'shift-jis', 'euc-jp']:
-                            try:
-                                body = payload.decode(encoding)
-                                break
-                            except UnicodeDecodeError:
-                                continue
+                    except UnicodeDecodeError:
+                        body = payload.decode('utf-8', errors='replace')
             
-            # デバッグ情報
-            print(f"Body found: {'Yes' if body else 'No'}")
-            if body:
-                print(f"Body length: {len(body)}")
-                print(f"Body preview: {body[:100]}")
-            
-            # 本文が取得できなかった場合のフォールバック
-            if not body:
-                body = "(本文を取得できませんでした)"
-                
+            # 値が取得できない場合のデフォルト値設定
             if not subject:
                 subject = "(件名なし)"
+            if not body:
+                body = "(本文なし)"
                 
+            print(f"Parsed subject: {subject}")
+            print(f"Body length: {len(body) if body else 0}")
+            
+            return {
+                'message_id': msg['message-id'],
+                'from': self.decode_str(msg['from']),
+                'to': self.decode_str(msg['to']),
+                'subject': subject,
+                'body': body,
+                'date': parsedate_to_datetime(msg['date']),
+                'is_sent': self.email_address in self.decode_str(msg['from'])
+            }
+            
         except Exception as e:
-            print(f"Message parse error: {str(e)}")
-            body = "(メッセージの解析に失敗しました)"
-            subject = "(件名の解析に失敗しました)"
-        
-        return {
-            'message_id': msg['message-id'],
-            'from': self.decode_str(msg['from']),
-            'to': self.decode_str(msg['to']),
-            'subject': subject,
-            'body': body,
-            'date': parsedate_to_datetime(msg['date']),
-            'is_sent': self.email_address in self.decode_str(msg['from'])
-        }
+            print(f"メッセージパースエラー: {str(e)}")
+            traceback.print_exc()
+            return None
 
     def decode_str(self, s):
         """文字列をデコードする"""
@@ -169,14 +145,11 @@ class EmailHandler:
     def get_gmail_folders(self):
         """Gmailフォルダー名を取得"""
         try:
-            # LISTコマンドの構文を修正
             _, folders = self.conn.list(directory='""', pattern='%')
             sent_folder = None
             for folder_data in folders:
-                # フォルダー情報をデコード
                 folder_info = folder_data.decode('utf-8')
                 if '[Gmail]' in folder_info and ('送信済み' in folder_info or 'Sent' in folder_info):
-                    # フォルダーパスを抽出
                     match = re.search(r'"([^"]+)"$', folder_info)
                     if match:
                         sent_folder = match.group(1)

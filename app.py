@@ -26,13 +26,20 @@ app = create_app()
 def highlight(text, search_query):
     """検索キーワードをハイライト表示するフィルター"""
     if not text or not search_query:
-        return text
+        return text if text else ""
     
-    terms = search_query.split()
+    text = str(text)
+    terms = [term.strip() for term in search_query.split() if term.strip()]
+    
+    # 特殊文字をエスケープし、日本語文字に対応
     for term in terms:
-        if term.strip():
-            pattern = re.compile(f'({re.escape(term)})', re.IGNORECASE)
-            text = pattern.sub(r'<mark>\1</mark>', str(text))
+        try:
+            pattern = re.compile(f'({re.escape(term)})', re.IGNORECASE | re.UNICODE)
+            text = pattern.sub(r'<mark>\1</mark>', text)
+        except Exception as e:
+            print(f"ハイライト処理エラー: {str(e)}")
+            continue
+    
     return text
 
 app.jinja_env.filters['highlight'] = highlight
