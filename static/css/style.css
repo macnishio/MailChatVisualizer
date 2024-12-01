@@ -260,10 +260,18 @@
 }
 
 /* Search result highlighting */
-mark {
+mark.search-highlight {
     background-color: #fff3cd;
     padding: 0.1em 0.2em;
     border-radius: 2px;
+    box-shadow: 0 0 1px rgba(0,0,0,0.2);
+    color: #856404;
+    font-weight: 500;
+    transition: background-color 0.2s ease;
+}
+
+mark.search-highlight:hover {
+    background-color: #ffe8a1;
 }
 
 .search-result-count {

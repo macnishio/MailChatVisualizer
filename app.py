@@ -28,19 +28,25 @@ def highlight(text, search_query):
     if not text or not search_query:
         return text if text else ""
     
-    text = str(text)
-    terms = [term.strip() for term in search_query.split() if term.strip()]
-    
-    # 特殊文字をエスケープし、日本語文字に対応
-    for term in terms:
-        try:
-            pattern = re.compile(f'({re.escape(term)})', re.IGNORECASE | re.UNICODE)
-            text = pattern.sub(r'<mark>\1</mark>', text)
-        except Exception as e:
-            print(f"ハイライト処理エラー: {str(e)}")
-            continue
-    
-    return text
+    try:
+        text = str(text)
+        terms = [term.strip() for term in search_query.split() if term.strip()]
+        
+        # 特殊文字をエスケープし、日本語文字に対応
+        for term in terms:
+            # 検索語を正規化（全角・半角の違いを無視）
+            normalized_term = re.escape(''.join(term))
+            pattern = re.compile(f'({normalized_term})', re.IGNORECASE | re.UNICODE | re.MULTILINE)
+            
+            def replace(match):
+                return f'<mark class="search-highlight">{match.group(1)}</mark>'
+            
+            text = pattern.sub(replace, text)
+            
+        return text
+    except Exception as e:
+        print(f"ハイライト処理エラー: {str(e)}")
+        return text
 
 app.jinja_env.filters['highlight'] = highlight
 
@@ -100,17 +106,19 @@ def index():
                 
                 if search_query:
                     search_terms = [term.strip() for term in search_query.split() if term.strip()]
+                    search_conditions = []
+                    
                     for term in search_terms:
-                        messages_query = messages_query.filter(
-                            and_(
-                                or_(
-                                    EmailMessage.subject.ilike(f'%{term}%'),
-                                    EmailMessage.body.ilike(f'%{term}%'),
-                                    EmailMessage.from_address.ilike(f'%{term}%'),
-                                    EmailMessage.to_address.ilike(f'%{term}%')
-                                )
-                            )
+                        condition = or_(
+                            EmailMessage.subject.ilike(f'%{term}%'),
+                            EmailMessage.body.ilike(f'%{term}%'),
+                            EmailMessage.from_address.ilike(f'%{term}%'),
+                            EmailMessage.to_address.ilike(f'%{term}%')
                         )
+                        search_conditions.append(condition)
+                    
+                    if search_conditions:
+                        messages_query = messages_query.filter(and_(*search_conditions))
                 
                 messages_query = messages_query.order_by(EmailMessage.date.desc())
                 
