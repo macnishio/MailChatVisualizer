@@ -1,5 +1,15 @@
 document.addEventListener('DOMContentLoaded', function() {
     const messagesContainer = document.querySelector('.messages-container');
+    
+    // メッセージの展開機能
+    document.querySelectorAll('.show-full-message').forEach(button => {
+        button.addEventListener('click', function() {
+            const preview = this.closest('.message-preview');
+            const full = preview.nextElementSibling;
+            preview.style.display = 'none';
+            full.style.display = 'block';
+        });
+    });
     const currentContact = new URLSearchParams(window.location.search).get('contact');
     const searchInput = document.getElementById('contactSearch');
     const searchResults = document.getElementById('searchResults');

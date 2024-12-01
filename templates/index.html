@@ -69,7 +69,7 @@
                                     {% if message.subject %}
                                         <div class="message-subject">
                                             {% if request.args.get('search') %}
-                                                {{ message.subject|highlight(request.args.get('search')) }}
+                                                {{ message.subject|highlight(request.args.get('search'))|safe }}
                                             {% else %}
                                                 {{ message.subject }}
                                             {% endif %}
@@ -77,9 +77,30 @@
                                     {% endif %}
                                     <div class="message-body">
                                         {% if request.args.get('search') %}
-                                            {{ message.body|highlight(request.args.get('search')) }}
+                                            {% set highlighted_body = message.body|highlight(request.args.get('search'))|safe %}
+                                            {% if highlighted_body|length > 500 %}
+                                                <div class="message-preview">
+                                                    {{ highlighted_body[:500] }}...
+                                                    <button class="btn btn-link btn-sm show-full-message">続きを表示</button>
+                                                </div>
+                                                <div class="message-full" style="display: none;">
+                                                    {{ highlighted_body }}
+                                                </div>
+                                            {% else %}
+                                                {{ highlighted_body }}
+                                            {% endif %}
                                         {% else %}
-                                            {{ message.body }}
+                                            {% if message.body|length > 500 %}
+                                                <div class="message-preview">
+                                                    {{ message.body[:500] }}...
+                                                    <button class="btn btn-link btn-sm show-full-message">続きを表示</button>
+                                                </div>
+                                                <div class="message-full" style="display: none;">
+                                                    {{ message.body }}
+                                                </div>
+                                            {% else %}
+                                                {{ message.body }}
+                                            {% endif %}
                                         {% endif %}
                                     </div>
                                     <div class="message-time">

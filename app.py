@@ -34,14 +34,23 @@ def highlight(text, search_query):
         
         # 特殊文字をエスケープし、日本語文字に対応
         for term in terms:
-            # 検索語を正規化（全角・半角の違いを無視）
-            normalized_term = re.escape(''.join(term))
-            pattern = re.compile(f'({normalized_term})', re.IGNORECASE | re.UNICODE | re.MULTILINE)
-            
-            def replace(match):
-                return f'<mark class="search-highlight">{match.group(1)}</mark>'
-            
-            text = pattern.sub(replace, text)
+            try:
+                # 検索語を正規化（全角・半角の違いを無視）
+                import unicodedata
+                normalized_term = unicodedata.normalize('NFKC', term)
+                normalized_text = unicodedata.normalize('NFKC', text)
+                
+                pattern = re.compile(f'({re.escape(normalized_term)})', re.IGNORECASE | re.UNICODE | re.MULTILINE)
+                
+                def replace(match):
+                    # 元のテキストの対応する部分を取得してハイライト
+                    original_text = text[match.start():match.end()]
+                    return f'<mark class="search-highlight">{original_text}</mark>'
+                
+                text = pattern.sub(replace, normalized_text)
+            except Exception as e:
+                print(f"単語のハイライト処理エラー: {term}, {str(e)}")
+                continue
             
         return text
     except Exception as e:
