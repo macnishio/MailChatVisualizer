@@ -162,20 +162,22 @@ class EmailHandler:
                     continue
 
                 try:
-                    # 最新のメールのみを取得
-                    _, messages = self.conn.sort(b'DATE', b'UTF-8', b'ALL')
-                    message_nums = messages[0].split()[-limit:]  # 最新のN件
+                    # SORTの代わりにSEARCHを使用
+                    _, messages = self.conn.search(None, 'ALL')
+                    message_nums = messages[0].split()
                     
-                    for num in message_nums:
+                    # 最新のメッセージから処理（limitで制限）
+                    for num in message_nums[-limit:]:
                         try:
                             _, msg_data = self.conn.fetch(num, '(RFC822)')
                             email_body = msg_data[0][1]
                             msg = email.message_from_bytes(email_body)
                             
                             from_addr = self.decode_str(msg['from'])
-                            if from_addr and (not search_query or search_query.lower() in from_addr.lower()):
-                                contacts.add(from_addr)
-                                
+                            if from_addr:
+                                if not search_query or search_query.lower() in from_addr.lower():
+                                    contacts.add(from_addr)
+                            
                         except Exception as e:
                             print(f"メッセージ処理エラー: {str(e)}")
                             continue
