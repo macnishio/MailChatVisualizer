@@ -27,16 +27,18 @@
         <div class="col-md-9 chat-area">
             {% if request.args.get('contact') %}
                 <div class="chat-header">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h5>{{ request.args.get('contact') }}</h5>
+                    <div class="chat-header-content">
+                        <h5 class="mb-0">{{ request.args.get('contact') }}</h5>
                         <form class="d-flex search-form" method="GET">
                             <input type="hidden" name="contact" value="{{ request.args.get('contact') }}">
-                            <input type="search" name="search" class="form-control me-2" 
-                                   placeholder="メッセージを検索..." 
-                                   value="{{ request.args.get('search', '') }}">
-                            <button class="btn btn-outline-primary" type="submit">
-                                <i class="fas fa-search"></i>
-                            </button>
+                            <div class="input-group">
+                                <input type="search" name="search" class="form-control" 
+                                       placeholder="メッセージを検索..." 
+                                       value="{{ request.args.get('search', '') }}">
+                                <button class="btn btn-outline-primary" type="submit">
+                                    <i class="fas fa-search"></i>
+                                </button>
+                            </div>
                         </form>
                     </div>
                 </div>
