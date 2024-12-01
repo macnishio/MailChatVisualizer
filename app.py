@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template, request, session, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 from email_handler import EmailHandler
 from werkzeug.security import generate_password_hash, check_password_hash
 from database import db
@@ -58,9 +58,10 @@ def index():
     
     if selected_contact:
         try:
-            # セッションスコープ内でクエリを実行
+            # データベースセッションを使用してクエリを実行
             with db.session.begin():
-                query = EmailMessage.query.filter(
+                # クエリの実行とデータの取得
+                messages_query = EmailMessage.query.filter(
                     db.or_(
                         EmailMessage.from_address == selected_contact,
                         EmailMessage.to_address == selected_contact
@@ -68,18 +69,20 @@ def index():
                 ).order_by(EmailMessage.date.desc())
                 
                 if search_query:
-                    query = query.filter(
+                    messages_query = messages_query.filter(
                         db.or_(
                             EmailMessage.subject.ilike(f'%{search_query}%'),
                             EmailMessage.body.ilike(f'%{search_query}%')
                         )
                     )
                 
-                # クエリの実行とデータの取得
-                total = query.count()
-                current_messages = query.offset((page - 1) * per_page).limit(per_page).all()
+                # 全件数を取得
+                total = messages_query.count()
                 
-                # メッセージデータの作成
+                # 現在のページのメッセージを取得して、データを完全にロード
+                current_messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
+                
+                # セッションがアクティブな間にデータを辞書に変換
                 messages = {
                     'items': [{
                         'id': msg.id,
@@ -92,9 +95,14 @@ def index():
                     'has_next': (page * per_page) < total,
                     'next_page': page + 1 if (page * per_page) < total else None
                 }
-                
         except Exception as e:
             print(f"メッセージ取得エラー: {str(e)}")
+            messages = {
+                'items': [],
+                'total': 0,
+                'has_next': False,
+                'next_page': None
+            }
     
     # テンプレートにデータを渡す
     return render_template(
