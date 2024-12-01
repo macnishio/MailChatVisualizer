@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="chat-container">
+    <div class="row h-100">
+        <!-- Contacts Sidebar -->
+        <div class="col-md-3 contacts-sidebar">
+            <div class="contacts-header">
+                <h5>Contacts</h5>
+            </div>
+            <div class="contacts-list">
+                {% for contact in contacts %}
+                <a href="{{ url_for('index', contact=contact) }}" 
+                   class="contact-item {% if request.args.get('contact') == contact %}active{% endif %}">
+                    <div class="contact-avatar">
+                        <i class="fas fa-user"></i>
+                    </div>
+                    <div class="contact-info">
+                        <div class="contact-name">{{ contact }}</div>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Chat Area -->
+        <div class="col-md-9 chat-area">
+            {% if request.args.get('contact') %}
+                <div class="chat-header">
+                    <h5>{{ request.args.get('contact') }}</h5>
+                </div>
+                <div class="messages-container">
+                    {% for message in messages %}
+                        <div class="message {% if message.is_sent %}sent{% else %}received{% endif %}">
+                            <div class="message-content">
+                                {{ message.body }}
+                                <div class="message-time">
+                                    {{ message.date.strftime('%Y-%m-%d %H:%M') }}
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="no-chat-selected">
+                    <p>Select a contact to view conversation</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
