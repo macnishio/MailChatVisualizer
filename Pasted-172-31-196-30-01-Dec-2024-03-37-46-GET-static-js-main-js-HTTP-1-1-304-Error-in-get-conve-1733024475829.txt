@@ -1,0 +1,42 @@
+172.31.196.30 - - [01/Dec/2024 03:37:46] "GET /static/js/main.js HTTP/1.1" 304 -
+Error in get_conversation: SEARCH command error: BAD [b'Could not parse command']
+Error in get_conversation: command SEARCH illegal in state AUTH, only allowed in states SELECTED
+172.31.196.30 - - [01/Dec/2024 03:38:25] "GET /?contact="Facebook"+<notification@priority.facebookmail.com> HTTP/1.1" 200 -
+Error in get_conversation: SEARCH command error: BAD [b'Could not parse command']
+Error in get_conversation: command SEARCH illegal in state AUTH, only allowed in states SELECTED
+172.31.196.30 - - [01/Dec/2024 03:38:56] "GET /?contact="Facebook"+<notification@priority.facebookmail.com> HTTP/1.1" 200 -
+Error in get_conversation: SEARCH command error: BAD [b'Could not parse command']
+Error in get_conversation: command SEARCH illegal in state AUTH, only allowed in states SELECTED
+172.31.196.30 - - [01/Dec/2024 03:39:01] "GET /?contact="ASUS+Japan"<noreply@nedm.asus.com> HTTP/1.1" 200 -
+Error in get_conversation: 'ascii' codec can't encode characters in position 26-28: ordinal not in range(128)
+Error in get_conversation: command SEARCH illegal in state AUTH, only allowed in states SELECTED
+172.31.196.30 - - [01/Dec/2024 03:39:02] "GET /?contact="FinTech+Journal編集部"+<mail-fj@ml3.sbcr.jp> HTTP/1.1" 200 -
+Error in get_conversation: 'ascii' codec can't encode characters in position 11-18: ordinal not in range(128)
+Error in get_conversation: command SEARCH illegal in state AUTH, only allowed in states SELECTED
+172.31.196.30 - - [01/Dec/2024 03:39:05] "GET /?contact="コミックシーモア+"+<magazine@and.cmoa.jp> HTTP/1.1" 200 -
+Error in get_conversation: 'ascii' codec can't encode characters in position 11-16: ordinal not in range(128)
+Error in get_conversation: command SEARCH illegal in state AUTH, only allowed in states SELECTED
+172.31.196.30 - - [01/Dec/2024 03:39:08] "GET /?contact="ドミノ・ピザ"+<dominos@mail.dominos.jp> HTTP/1.1" 200 -
+172.31.196.30 - - [01/Dec/2024 03:39:09] "GET /static/css/style.css HTTP/1.1" 200 -
+172.31.196.30 - - [01/Dec/2024 03:39:10] "GET /static/js/main.js HTTP/1.1" 200 -
+Error in get_conversation: SEARCH command error: BAD [b'Could not parse command']
+Error in get_conversation: command SEARCH illegal in state AUTH, only allowed in states SELECTED
+172.31.196.30 - - [01/Dec/2024 03:39:18] "GET /?contact="ASUS+Japan"<noreply@nedm.asus.com> HTTP/1.1" 200 -
+172.31.196.30 - - [01/Dec/2024 03:39:19] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.30 - - [01/Dec/2024 03:39:20] "GET /static/js/main.js HTTP/1.1" 304 -
+Error in get_conversation: SEARCH command error: BAD [b'Could not parse command']
+Error in get_conversation: command SEARCH illegal in state AUTH, only allowed in states SELECTED
+172.31.196.30 - - [01/Dec/2024 03:40:30] "GET /?contact="ASUS+Japan"<noreply@nedm.asus.com>&search=asus HTTP/1.1" 200 -
+Error in get_conversation: SEARCH command error: BAD [b'Could not parse command']
+Error in get_conversation: command SEARCH illegal in state AUTH, only allowed in states SELECTED
+172.31.196.30 - - [01/Dec/2024 03:40:33] "GET /?contact="ASUS+Japan"<noreply@nedm.asus.com>&search=asus HTTP/1.1" 200 -
+172.31.196.30 - - [01/Dec/2024 03:40:33] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.30 - - [01/Dec/2024 03:40:33] "GET /static/js/main.js HTTP/1.1" 304 -
+Error in get_conversation: 'ascii' codec can't encode characters in position 12-17: ordinal not in range(128)
+Error in get_conversation: command SEARCH illegal in state AUTH, only allowed in states SELECTED
+172.31.196.30 - - [01/Dec/2024 03:40:49] "GET /?contact="ドミノ・ピザ"+<dominos@mail.dominos.jp>&search=ドミノ HTTP/1.1" 200 -
+Error in get_conversation: 'ascii' codec can't encode characters in position 12-17: ordinal not in range(128)
+Error in get_conversation: command SEARCH illegal in state AUTH, only allowed in states SELECTED
+172.31.196.30 - - [01/Dec/2024 03:40:51] "GET /?contact="ドミノ・ピザ"+<dominos@mail.dominos.jp>&search=ドミノ HTTP/1.1" 200 -
+172.31.196.30 - - [01/Dec/2024 03:40:51] "GET /static/css/style.css HTTP/1.1" 200 -
+172.31.196.30 - - [01/Dec/2024 03:40:52] "GET /static/js/main.js HTTP/1.1" 200 -

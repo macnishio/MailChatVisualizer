@@ -1,0 +1,126 @@
+background.js:1 
+        
+        
+       Uncaught (in promise) TypeError: Failed to fetch
+    at background.js:1:14406
+    at new Promise (<anonymous>)
+    at Object.isUserLoggedIn (background.js:1:14203)
+    at background.js:1:15851
+    at Array.map (<anonymous>)
+    at Object.checkAndPrePopulateUserDC (background.js:1:15820)
+    at Object.initBackgroundProcess (background.js:1:21597)
+    at background.js:1:23260
+    at background.js:1:23286
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1Understand this errorAI
+background.js:1 
+        
+        
+       Uncaught (in promise) TypeError: Failed to fetch
+    at background.js:1:14406
+    at new Promise (<anonymous>)
+    at Object.isUserLoggedIn (background.js:1:14203)
+    at background.js:1:15851
+    at Array.map (<anonymous>)
+    at Object.checkAndPrePopulateUserDC (background.js:1:15820)
+    at Object.initBackgroundProcess (background.js:1:21597)
+    at background.js:1:23260
+    at background.js:1:23286
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1Understand this errorAI
+background.js:1 
+        
+        
+       Uncaught (in promise) TypeError: Failed to fetch
+    at background.js:1:14406
+    at new Promise (<anonymous>)
+    at Object.isUserLoggedIn (background.js:1:14203)
+    at background.js:1:15851
+    at Array.map (<anonymous>)
+    at Object.checkAndPrePopulateUserDC (background.js:1:15820)
+    at Object.initBackgroundProcess (background.js:1:21597)
+    at background.js:1:23260
+    at background.js:1:23286
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1Understand this errorAI
+background.js:1 
+        
+        
+       Uncaught (in promise) TypeError: Failed to fetch
+    at background.js:1:14406
+    at new Promise (<anonymous>)
+    at Object.isUserLoggedIn (background.js:1:14203)
+    at background.js:1:15851
+    at Array.map (<anonymous>)
+    at Object.checkAndPrePopulateUserDC (background.js:1:15820)
+    at Object.initBackgroundProcess (background.js:1:21597)
+    at background.js:1:23260
+    at background.js:1:23286
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1Understand this errorAI
+background.js:1 
+        
+        
+       Uncaught (in promise) TypeError: Failed to fetch
+    at background.js:1:14406
+    at new Promise (<anonymous>)
+    at Object.isUserLoggedIn (background.js:1:14203)
+    at background.js:1:15851
+    at Array.map (<anonymous>)
+    at Object.checkAndPrePopulateUserDC (background.js:1:15820)
+    at Object.initBackgroundProcess (background.js:1:21597)
+    at background.js:1:23260
+    at background.js:1:23286
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1Understand this errorAI
+background.js:1 
+        
+        
+       Uncaught (in promise) TypeError: Failed to fetch
+    at background.js:1:14406
+    at new Promise (<anonymous>)
+    at Object.isUserLoggedIn (background.js:1:14203)
+    at background.js:1:15851
+    at Array.map (<anonymous>)
+    at Object.checkAndPrePopulateUserDC (background.js:1:15820)
+    at Object.initBackgroundProcess (background.js:1:21597)
+    at background.js:1:23260
+    at background.js:1:23286
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1
+(anonymous) @ background.js:1Understand this errorAI
+6background.js:1 Uncaught (in promise) Error: Cannot access contents of the page. Extension manifest must request permission to access the respective host.Understand this errorAI
+75chrome-extension://k…-worker-loader.js:1 Uncaught (in promise) Error: Could not establish connection. Receiving end does not exist.Understand this errorAI
+10Unchecked runtime.lastError: The page keeping the extension port is moved into back/forward cache, so the message channel is closed.Understand this errorAI
+114service-worker-loader.js:1 Uncaught (in promise) Error: Could not establish connection. Receiving end does not exist.Understand this errorAI
+Unchecked runtime.lastError: No tab with id: 482092446.Understand this errorAI
+72service-worker-loader.js:1 Uncaught (in promise) Error: Could not establish connection. Receiving end does not exist.
