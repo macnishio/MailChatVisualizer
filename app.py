@@ -46,7 +46,7 @@ def index():
             contacts = []
     
     # メッセージデータの初期化
-    messages_data = {
+    messages_dict = {
         'items': [],
         'total': 0,
         'has_next': False,
@@ -58,49 +58,50 @@ def index():
     
     if selected_contact:
         try:
-            # セッションスコープ内でクエリを実行
-            with db.session.begin():
-                messages_query = db.session.query(EmailMessage).filter(
+            # クエリの構築
+            messages_query = EmailMessage.query.filter(
+                db.or_(
+                    EmailMessage.from_address == selected_contact,
+                    EmailMessage.to_address == selected_contact
+                )
+            ).order_by(EmailMessage.date.desc())
+            
+            if search_query:
+                messages_query = messages_query.filter(
                     db.or_(
-                        EmailMessage.from_address == selected_contact,
-                        EmailMessage.to_address == selected_contact
+                        EmailMessage.subject.ilike(f'%{search_query}%'),
+                        EmailMessage.body.ilike(f'%{search_query}%')
                     )
-                ).order_by(EmailMessage.date.desc())
-                
-                if search_query:
-                    messages_query = messages_query.filter(
-                        db.or_(
-                            EmailMessage.subject.ilike(f'%{search_query}%'),
-                            EmailMessage.body.ilike(f'%{search_query}%')
-                        )
-                    )
-                
-                # 全件数を取得
-                total = messages_query.count()
-                
-                # 現在のページのメッセージを取得
-                current_messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
-                
-                # メッセージデータを辞書に変換
-                messages_data['items'] = [{
+                )
+            
+            # 全件数を取得
+            total = messages_query.count()
+            
+            # 現在のページのメッセージを取得
+            current_messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
+            
+            # メッセージデータを辞書に変換
+            messages_dict['items'] = []
+            for msg in current_messages:
+                messages_dict['items'].append({
                     'id': msg.id,
                     'subject': msg.subject,
                     'body': msg.body,
                     'date': msg.date,
                     'is_sent': msg.is_sent
-                } for msg in current_messages]
-                
-                messages_data['total'] = total
-                messages_data['has_next'] = (page * per_page) < total
-                messages_data['next_page'] = page + 1 if (page * per_page) < total else None
-                
+                })
+            
+            messages_dict['total'] = total
+            messages_dict['has_next'] = (page * per_page) < total
+            messages_dict['next_page'] = page + 1 if (page * per_page) < total else None
+            
         except Exception as e:
             print(f"メッセージ取得エラー: {str(e)}")
     
     # テンプレートにデータを渡す
     return render_template(
         'index.html',
-        messages=messages_data,
+        messages=messages_dict,
         contacts=contacts,
         current_page=page
     )
