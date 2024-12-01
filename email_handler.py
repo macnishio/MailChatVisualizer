@@ -42,48 +42,54 @@ class EmailHandler:
         msg = email.message_from_bytes(email_body)
         body = ""
         
-        # マルチパートメッセージの処理を改善
+        # デバッグログ追加
+        print(f"メッセージヘッダー: {dict(msg.items())}")
+        print(f"Content-Type: {msg.get_content_type()}")
+        print(f"Is Multipart: {msg.is_multipart()}")
+        
+        # マルチパートメッセージの処理
         if msg.is_multipart():
             for part in msg.walk():
-                if part.get_content_type() == "text/plain":
+                content_type = part.get_content_type()
+                print(f"Part Content-Type: {content_type}")
+                
+                if content_type == "text/plain":
                     try:
                         payload = part.get_payload(decode=True)
                         if payload:
-                            charset = part.get_content_charset() or 'utf-8'
-                            try:
-                                body = payload.decode(charset)
+                            charset = part.get_content_charset()
+                            if charset:
+                                try:
+                                    body = payload.decode(charset)
+                                    break
+                                except UnicodeDecodeError:
+                                    body = payload.decode('utf-8', errors='replace')
+                                    break
+                            else:
+                                body = payload.decode('utf-8', errors='replace')
                                 break
-                            except UnicodeDecodeError:
-                                # 代替文字コードを試行
-                                for charset in ['utf-8', 'iso-2022-jp', 'shift-jis', 'euc-jp']:
-                                    try:
-                                        body = payload.decode(charset)
-                                        break
-                                    except UnicodeDecodeError:
-                                        continue
                     except Exception as e:
-                        print(f"パート処理エラー: {str(e)}")
+                        print(f"Part decode error: {str(e)}")
+                        continue
         else:
             try:
                 payload = msg.get_payload(decode=True)
                 if payload:
-                    charset = msg.get_content_charset() or 'utf-8'
-                    try:
-                        body = payload.decode(charset)
-                    except UnicodeDecodeError:
-                        # 代替文字コードを試行
-                        for charset in ['utf-8', 'iso-2022-jp', 'shift-jis', 'euc-jp']:
-                            try:
-                                body = payload.decode(charset)
-                                break
-                            except UnicodeDecodeError:
-                                continue
+                    charset = msg.get_content_charset()
+                    if charset:
+                        try:
+                            body = payload.decode(charset)
+                        except UnicodeDecodeError:
+                            body = payload.decode('utf-8', errors='replace')
+                    else:
+                        body = payload.decode('utf-8', errors='replace')
             except Exception as e:
-                print(f"本文デコードエラー: {str(e)}")
+                print(f"Message decode error: {str(e)}")
         
-        # デバッグログ
-        print(f"本文取得結果: 長さ={len(body)}")
-        print(f"本文サンプル: {body[:100]}")
+        # デバッグ情報
+        print(f"Subject: {msg['subject']}")
+        print(f"Body length: {len(body)}")
+        print(f"Body preview: {body[:100]}")
         
         return {
             'message_id': msg['message-id'],

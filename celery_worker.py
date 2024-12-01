@@ -75,7 +75,14 @@ def sync_emails(email, password, imap_server):
                                 with session_scope() as session:
                                     _, msg_data = handler.conn.fetch(num, '(RFC822)')
                                     email_body = msg_data[0][1]
+                                    
+                                    # デバッグ情報
+                                    print("=== メッセージ同期開始 ===")
+                                    print(f"Message number: {num}")
+                                    
                                     msg = handler.parse_email_message(email_body)
+                                    print(f"Parsed message: {msg['subject']}, Body length: {len(msg['body'])}")
+                                    
                                     stats['total_processed'] += 1
                                     stats['folder_stats'][str(folder)]['processed'] += 1
                                     
