@@ -29,6 +29,7 @@ def index():
     page = request.args.get('page', 1, type=int)
     per_page = 20
     
+    # 連絡先の取得
     contacts = cache.get('contacts')
     if not contacts:
         try:
@@ -44,7 +45,8 @@ def index():
             print(f"連絡先取得エラー: {str(e)}")
             contacts = []
     
-    messages_data = {
+    # メッセージデータの初期化
+    messages = {
         'items': [],
         'total': 0,
         'has_next': False,
@@ -56,8 +58,9 @@ def index():
     
     if selected_contact:
         try:
+            # セッションスコープ内でクエリを実行
             with db.session.begin():
-                messages_query = EmailMessage.query.filter(
+                query = EmailMessage.query.filter(
                     db.or_(
                         EmailMessage.from_address == selected_contact,
                         EmailMessage.to_address == selected_contact
@@ -65,7 +68,7 @@ def index():
                 ).order_by(EmailMessage.date.desc())
                 
                 if search_query:
-                    messages_query = messages_query.filter(
+                    query = query.filter(
                         db.or_(
                             EmailMessage.subject.ilike(f'%{search_query}%'),
                             EmailMessage.body.ilike(f'%{search_query}%')
@@ -73,31 +76,30 @@ def index():
                     )
                 
                 # クエリの実行とデータの取得
-                total = messages_query.count()
-                current_messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
+                total = query.count()
+                current_messages = query.offset((page - 1) * per_page).limit(per_page).all()
                 
-                # オブジェクトを辞書に変換
-                messages_items = [{
-                    'id': msg.id,
-                    'subject': msg.subject,
-                    'body': msg.body,
-                    'date': msg.date,
-                    'is_sent': msg.is_sent
-                } for msg in current_messages]
-                
-                messages_data.update({
-                    'items': messages_items,
+                # メッセージデータの作成
+                messages = {
+                    'items': [{
+                        'id': msg.id,
+                        'subject': msg.subject,
+                        'body': msg.body,
+                        'date': msg.date,
+                        'is_sent': msg.is_sent
+                    } for msg in current_messages],
                     'total': total,
                     'has_next': (page * per_page) < total,
                     'next_page': page + 1 if (page * per_page) < total else None
-                })
+                }
                 
         except Exception as e:
             print(f"メッセージ取得エラー: {str(e)}")
     
+    # テンプレートにデータを渡す
     return render_template(
         'index.html',
-        messages=messages_data,
+        messages=messages,
         contacts=contacts,
         current_page=page
     )
