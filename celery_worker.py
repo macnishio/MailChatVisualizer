@@ -76,45 +76,47 @@ def sync_emails(email, password, imap_server):
                                     _, msg_data = handler.conn.fetch(num, '(RFC822)')
                                     email_body = msg_data[0][1]
                                     
-                                    # デバッグ情報
-                                    print("=== メッセージ同期開始 ===")
+                                    # デバッグ情報の出力
+                                    print("\n=== メッセージ同期開始 ===")
                                     print(f"Message number: {num}")
                                     
-                                    msg = handler.parse_email_message(email_body)
-                                    print(f"Parsed message: {msg['subject']}, Body length: {len(msg['body'])}")
+                                    # メッセージのパース
+                                    parsed_msg = handler.parse_email_message(email_body)
+                                    
+                                    # パース結果の確認
+                                    print("パース結果:")
+                                    print(f"Subject: {parsed_msg['subject']}")
+                                    print(f"From: {parsed_msg['from']}")
+                                    print(f"To: {parsed_msg['to']}")
+                                    print(f"Body length: {len(parsed_msg['body']) if parsed_msg['body'] else 0}")
+                                    print(f"Body preview: {parsed_msg['body'][:100] if parsed_msg['body'] else 'No body'}")
                                     
                                     stats['total_processed'] += 1
                                     stats['folder_stats'][str(folder)]['processed'] += 1
                                     
-                                    if not msg['message_id']:
-                                        print(f"メッセージID不足: スキップ")
-                                        continue
-                                    
-                                    try:
-                                        # トランザクション内でメッセージの存在確認と更新
+                                    # データベースへの保存
+                                    if parsed_msg['message_id']:
                                         existing_message = session.query(EmailMessage)\
-                                            .filter_by(message_id=msg['message_id'])\
+                                            .filter_by(message_id=parsed_msg['message_id'])\
                                             .first()
-                                        
+                                            
                                         if existing_message:
-                                            if (existing_message.subject != msg['subject'] or 
-                                                existing_message.body != msg['body']):
-                                                print(f"メッセージ更新: ID={msg['message_id']}")
-                                                existing_message.subject = msg['subject']
-                                                existing_message.body = msg['body']
-                                                existing_message.last_sync = datetime.utcnow()
-                                                stats['total_updated'] += 1
-                                                stats['folder_stats'][str(folder)]['updated'] += 1
+                                            print(f"メッセージ更新: ID={parsed_msg['message_id']}")
+                                            existing_message.subject = parsed_msg['subject'] or '(件名なし)'
+                                            existing_message.body = parsed_msg['body'] or ''
+                                            existing_message.last_sync = datetime.utcnow()
+                                            stats['total_updated'] += 1
+                                            stats['folder_stats'][str(folder)]['updated'] += 1
                                         else:
-                                            print(f"新規メッセージ保存: ID={msg['message_id']}")
+                                            print(f"新規メッセージ保存: ID={parsed_msg['message_id']}")
                                             new_message = EmailMessage(
-                                                message_id=msg['message_id'],
-                                                from_address=msg['from'],
-                                                to_address=msg['to'],
-                                                subject=msg['subject'],
-                                                body=msg['body'],
-                                                date=msg['date'],
-                                                is_sent=msg['is_sent'],
+                                                message_id=parsed_msg['message_id'],
+                                                from_address=parsed_msg['from'],
+                                                to_address=parsed_msg['to'],
+                                                subject=parsed_msg['subject'] or '(件名なし)',
+                                                body=parsed_msg['body'] or '',
+                                                date=parsed_msg['date'],
+                                                is_sent=parsed_msg['is_sent'],
                                                 folder=str(folder),
                                                 last_sync=datetime.utcnow()
                                             )
@@ -123,9 +125,9 @@ def sync_emails(email, password, imap_server):
                                             stats['folder_stats'][str(folder)]['new'] += 1
                                         
                                         session.commit()
-                                    except Exception as e:
-                                        session.rollback()
-                                        raise e
+                                        print("メッセージ保存成功")
+                                    else:
+                                        print("メッセージIDなし: スキップ")
                                     
                             except Exception as e:
                                 stats['total_errors'] += 1
