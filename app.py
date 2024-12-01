@@ -56,46 +56,42 @@ def index():
     
     if selected_contact:
         try:
-            # セッションスコープ内でクエリを実行
-            messages_query = db.session.query(EmailMessage).filter(
-                db.or_(
-                    EmailMessage.from_address == selected_contact,
-                    EmailMessage.to_address == selected_contact
-                )
-            ).order_by(EmailMessage.date.desc())
-            
-            if search_query:
-                messages_query = messages_query.filter(
+            with db.session.begin():
+                messages_query = EmailMessage.query.filter(
                     db.or_(
-                        EmailMessage.subject.ilike(f'%{search_query}%'),
-                        EmailMessage.body.ilike(f'%{search_query}%')
+                        EmailMessage.from_address == selected_contact,
+                        EmailMessage.to_address == selected_contact
                     )
-                )
-            
-            # 全メッセージ数を取得
-            total = messages_query.count()
-            
-            # 現在のページのメッセージを取得
-            current_messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
-            
-            # セッション内でデータを辞書に変換
-            messages_items = []
-            for msg in current_messages:
-                messages_items.append({
+                ).order_by(EmailMessage.date.desc())
+                
+                if search_query:
+                    messages_query = messages_query.filter(
+                        db.or_(
+                            EmailMessage.subject.ilike(f'%{search_query}%'),
+                            EmailMessage.body.ilike(f'%{search_query}%')
+                        )
+                    )
+                
+                # クエリの実行とデータの取得
+                total = messages_query.count()
+                current_messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
+                
+                # オブジェクトを辞書に変換
+                messages_items = [{
                     'id': msg.id,
                     'subject': msg.subject,
                     'body': msg.body,
                     'date': msg.date,
                     'is_sent': msg.is_sent
+                } for msg in current_messages]
+                
+                messages_data.update({
+                    'items': messages_items,
+                    'total': total,
+                    'has_next': (page * per_page) < total,
+                    'next_page': page + 1 if (page * per_page) < total else None
                 })
-            
-            messages_data = {
-                'items': messages_items,
-                'total': total,
-                'has_next': (page * per_page) < total,
-                'next_page': page + 1 if (page * per_page) < total else None
-            }
-        
+                
         except Exception as e:
             print(f"メッセージ取得エラー: {str(e)}")
     

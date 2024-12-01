@@ -71,7 +71,7 @@
                                     {% endif %}
                                     <div class="message-body">{{ message.body }}</div>
                                     <div class="message-time">
-                                        {{ message.date.strftime('%Y-%m-%d %H:%M') }}
+                                        {{ message.date.strftime('%Y-%m-%d %H:%M') if message.date else '' }}
                                     </div>
                                 </div>
                             </div>
