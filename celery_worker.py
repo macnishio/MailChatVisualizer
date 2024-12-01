@@ -1,6 +1,7 @@
 from celery import Celery
 from datetime import datetime, timedelta
 from sqlalchemy import or_
+import traceback
 from models import EmailMessage
 from database import session_scope
 from email_handler import EmailHandler
@@ -71,39 +72,39 @@ def sync_emails(email, password, imap_server):
                         batch_start_time = time.time()
                         
                         for num in batch_nums:
+                            # メッセージのパースと保存部分
                             try:
                                 with session_scope() as session:
                                     _, msg_data = handler.conn.fetch(num, '(RFC822)')
                                     email_body = msg_data[0][1]
                                     
-                                    # デバッグ情報の出力
+                                    # デバッグ情報
                                     print("\n=== メッセージ同期開始 ===")
                                     print(f"Message number: {num}")
                                     
-                                    # メッセージのパース
+                                    # メッセージのパースと結果確認
                                     parsed_msg = handler.parse_email_message(email_body)
-                                    
-                                    # パース結果の確認
-                                    print("パース結果:")
+                                    print("\n=== パース結果 ===")
+                                    print(f"Message ID: {parsed_msg['message_id']}")
                                     print(f"Subject: {parsed_msg['subject']}")
                                     print(f"From: {parsed_msg['from']}")
                                     print(f"To: {parsed_msg['to']}")
                                     print(f"Body length: {len(parsed_msg['body']) if parsed_msg['body'] else 0}")
                                     print(f"Body preview: {parsed_msg['body'][:100] if parsed_msg['body'] else 'No body'}")
                                     
-                                    stats['total_processed'] += 1
-                                    stats['folder_stats'][str(folder)]['processed'] += 1
-                                    
-                                    # データベースへの保存
                                     if parsed_msg['message_id']:
+                                        # データベースに保存する前にNoneチェック
+                                        subject = parsed_msg['subject'] if parsed_msg['subject'] else '(件名なし)'
+                                        body = parsed_msg['body'] if parsed_msg['body'] else ''
+                                        
                                         existing_message = session.query(EmailMessage)\
                                             .filter_by(message_id=parsed_msg['message_id'])\
                                             .first()
-                                            
+                                        
                                         if existing_message:
                                             print(f"メッセージ更新: ID={parsed_msg['message_id']}")
-                                            existing_message.subject = parsed_msg['subject'] or '(件名なし)'
-                                            existing_message.body = parsed_msg['body'] or ''
+                                            existing_message.subject = subject
+                                            existing_message.body = body
                                             existing_message.last_sync = datetime.utcnow()
                                             stats['total_updated'] += 1
                                             stats['folder_stats'][str(folder)]['updated'] += 1
@@ -113,8 +114,8 @@ def sync_emails(email, password, imap_server):
                                                 message_id=parsed_msg['message_id'],
                                                 from_address=parsed_msg['from'],
                                                 to_address=parsed_msg['to'],
-                                                subject=parsed_msg['subject'] or '(件名なし)',
-                                                body=parsed_msg['body'] or '',
+                                                subject=subject,
+                                                body=body,
                                                 date=parsed_msg['date'],
                                                 is_sent=parsed_msg['is_sent'],
                                                 folder=str(folder),
@@ -128,14 +129,13 @@ def sync_emails(email, password, imap_server):
                                         print("メッセージ保存成功")
                                     else:
                                         print("メッセージIDなし: スキップ")
-                                    
                             except Exception as e:
-                                stats['total_errors'] += 1
-                                stats['folder_stats'][str(folder)]['errors'] += 1
                                 print(f"メッセージ処理エラー: {str(e)}")
                                 traceback.print_exc()
+                                stats['total_errors'] += 1
+                                stats['folder_stats'][str(folder)]['errors'] += 1
                                 continue
-                        
+
                         batch_time = time.time() - batch_start_time
                         print(f"バッチ処理完了 ({i+1}-{min(i+batch_size, message_count)}/{message_count}): {batch_time:.2f}秒")
                     
@@ -164,7 +164,7 @@ def sync_emails(email, password, imap_server):
         except Exception as e:
             print(f"メール同期エラー: {str(e)}")
             traceback.print_exc()
-            raise e  # エラーを再度発生させて、Celeryに失敗を通知
+            raise e
 
 @celery.task
 def sync_old_contacts():
