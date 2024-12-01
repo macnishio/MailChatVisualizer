@@ -85,13 +85,18 @@ class EmailHandler:
     def get_gmail_folders(self):
         """Gmailフォルダー名を取得"""
         try:
-            _, folders = self.conn.list('', '[Gmail]*')
+            # LISTコマンドの構文を修正
+            _, folders = self.conn.list(directory='""', pattern='%')
             sent_folder = None
-            for folder in folders:
-                folder_name = folder.decode().split('"/"')[-1].strip('"')
-                if '送信済み' in folder_name or 'Sent' in folder_name:
-                    sent_folder = folder_name
-                    break
+            for folder_data in folders:
+                # フォルダー情報をデコード
+                folder_info = folder_data.decode('utf-8')
+                if '[Gmail]' in folder_info and ('送信済み' in folder_info or 'Sent' in folder_info):
+                    # フォルダーパスを抽出
+                    match = re.search(r'"([^"]+)"$', folder_info)
+                    if match:
+                        sent_folder = match.group(1)
+                        break
             return sent_folder
         except Exception as e:
             print(f"Gmailフォルダー取得エラー: {str(e)}")
