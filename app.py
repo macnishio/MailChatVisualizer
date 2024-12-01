@@ -45,13 +45,13 @@ def index():
             print(f"連絡先取得エラー: {str(e)}")
             contacts = []
     
-    messages = []
+    messages_list = []
     selected_contact = request.args.get('contact')
     search_query = request.args.get('search')
+    total_messages = 0
     
     if selected_contact:
         try:
-            # 新しいセッションスコープでクエリを実行
             with db.session.begin():
                 messages_query = EmailMessage.query.filter(
                     db.or_(
@@ -68,11 +68,14 @@ def index():
                         )
                     )
                 
-                # すべてのデータを一度にロード
-                messages = messages_query.all()
+                # 全メッセージ数を取得
+                total_messages = messages_query.count()
                 
-                # 必要な属性を辞書に変換
-                messages = [{
+                # ページネーション
+                messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
+                
+                # 辞書リストに変換
+                messages_list = [{
                     'body': msg.body,
                     'date': msg.date,
                     'is_sent': msg.is_sent,
@@ -81,25 +84,18 @@ def index():
         
         except Exception as e:
             print(f"メッセージ取得エラー: {str(e)}")
-            messages = []
-    
-    # ページネーション用の処理
-    start = (page - 1) * per_page
-    end = start + per_page
-    current_messages = messages[start:end] if messages else []
-    total = len(messages)
-    
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-        return jsonify({
-            'messages': current_messages,
-            'has_next': end < total,
-            'next_page': page + 1 if end < total else None
-        })
+            messages_list = []
     
     return render_template(
         'index.html',
-        messages={'items': current_messages, 'total': total},
-        contacts=contacts
+        messages={
+            'items': messages_list,
+            'total': total_messages,
+            'has_next': (page * per_page) < total_messages,
+            'next_page': page + 1 if (page * per_page) < total_messages else None
+        },
+        contacts=contacts,
+        current_page=page
     )
 
 @app.route('/settings', methods=['GET', 'POST'])

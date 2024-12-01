@@ -76,9 +76,18 @@
                                 </div>
                             </div>
                         {% endfor %}
+                        
+                        {% if messages.has_next %}
+                            <div class="load-more">
+                                <a href="?contact={{ request.args.get('contact') }}&page={{ messages.next_page }}"
+                                   class="btn btn-outline-primary">
+                                    さらに読み込む
+                                </a>
+                            </div>
+                        {% endif %}
                     {% else %}
                         <div class="no-messages">
-                            <p>No messages found</p>
+                            <p>メッセージが見つかりません</p>
                         </div>
                     {% endif %}
                 </div>
