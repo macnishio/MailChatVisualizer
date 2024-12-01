@@ -37,6 +37,33 @@ class EmailHandler:
         except:
             pass
 
+    def parse_email_message(self, email_body):
+        """メールメッセージをパースしてディクショナリを返す"""
+        msg = email.message_from_bytes(email_body)
+        
+        body = ""
+        if msg.is_multipart():
+            for part in msg.walk():
+                if part.get_content_type() == "text/plain":
+                    payload = part.get_payload(decode=True)
+                    if payload:
+                        body = payload.decode('utf-8', errors='replace')
+                        break
+        else:
+            payload = msg.get_payload(decode=True)
+            if payload:
+                body = payload.decode('utf-8', errors='replace')
+
+        return {
+            'message_id': msg['message-id'],
+            'from': self.decode_str(msg['from']),
+            'to': self.decode_str(msg['to']),
+            'subject': self.decode_str(msg['subject']),
+            'body': body,
+            'date': parsedate_to_datetime(msg['date']),
+            'is_sent': self.email_address in self.decode_str(msg['from'])
+        }
+
     def decode_str(self, s):
         """文字列をデコードする"""
         if s is None:
