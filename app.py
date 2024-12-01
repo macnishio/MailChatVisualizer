@@ -92,27 +92,26 @@ def settings():
 
 @app.route('/api/search_contacts')
 def search_contacts():
+    if 'email' not in session:
+        return jsonify([])
+        
     query = request.args.get('q', '')
-    print(f"検索クエリ: {query}")  # デバッグログ
+    print(f"検索クエリ: {query}")
     
     if len(query) >= 2:
         try:
-            # 強制的にメール同期を実行
-            if 'email' in session:
-                sync_emails.delay(session['email'], session['password'], session['imap_server'])
+            contacts = EmailMessage.query\
+                .with_entities(EmailMessage.from_address)\
+                .filter(EmailMessage.from_address.ilike(f'%{query}%'))\
+                .distinct()\
+                .limit(10)\
+                .all()
             
-            with session_scope() as session:
-                contacts = session.query(EmailMessage.from_address)\
-                    .filter(EmailMessage.from_address.ilike(f'%{query}%'))\
-                    .distinct()\
-                    .limit(10)\
-                    .all()
-                
-                print(f"検索結果: {contacts}")  # デバッグログ
-                results = [contact[0] for contact in contacts if contact[0]]
-                return jsonify(results)
+            print(f"検索結果: {contacts}")
+            results = [contact[0] for contact in contacts if contact[0]]
+            return jsonify(results)
         except Exception as e:
-            print(f"連絡先検索エラー: {str(e)}")  # デバッグログ
+            print(f"連絡先検索エラー: {str(e)}")
             return jsonify([])
     return jsonify([])
 
