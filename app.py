@@ -1,14 +1,12 @@
 import os
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
+from models import db, EmailMessage
 import traceback
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 from email_handler import EmailHandler
-from werkzeug.security import generate_password_hash, check_password_hash
-from database import db
-from models import EmailMessage, EmailSettings
-from datetime import datetime
 from database import session_scope
 from flask_caching import Cache
-from sqlalchemy import text, or_
+from sqlalchemy import text, or_, and_
+import re
 
 def create_app():
     app = Flask(__name__)
@@ -24,6 +22,20 @@ def create_app():
     return app
 
 app = create_app()
+
+def highlight(text, search_query):
+    """検索キーワードをハイライト表示するフィルター"""
+    if not text or not search_query:
+        return text
+    
+    terms = search_query.split()
+    for term in terms:
+        if term.strip():
+            pattern = re.compile(f'({re.escape(term)})', re.IGNORECASE)
+            text = pattern.sub(r'<mark>\1</mark>', str(text))
+    return text
+
+app.jinja_env.filters['highlight'] = highlight
 
 # キャッシュ設定
 cache = Cache(config={
@@ -80,14 +92,16 @@ def index():
                     )
                 
                 if search_query:
-                    search_terms = search_query.split()
+                    search_terms = [term.strip() for term in search_query.split() if term.strip()]
                     for term in search_terms:
                         messages_query = messages_query.filter(
-                            or_(
-                                EmailMessage.subject.ilike(f'%{term}%'),
-                                EmailMessage.body.ilike(f'%{term}%'),
-                                EmailMessage.from_address.ilike(f'%{term}%'),
-                                EmailMessage.to_address.ilike(f'%{term}%')
+                            and_(
+                                or_(
+                                    EmailMessage.subject.ilike(f'%{term}%'),
+                                    EmailMessage.body.ilike(f'%{term}%'),
+                                    EmailMessage.from_address.ilike(f'%{term}%'),
+                                    EmailMessage.to_address.ilike(f'%{term}%')
+                                )
                             )
                         )
                 

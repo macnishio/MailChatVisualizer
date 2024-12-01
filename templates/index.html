@@ -67,9 +67,21 @@
                             <div class="message {% if message.is_sent %}sent{% else %}received{% endif %}">
                                 <div class="message-content">
                                     {% if message.subject %}
-                                        <div class="message-subject">{{ message.subject }}</div>
+                                        <div class="message-subject">
+                                            {% if request.args.get('search') %}
+                                                {{ message.subject|highlight(request.args.get('search')) }}
+                                            {% else %}
+                                                {{ message.subject }}
+                                            {% endif %}
+                                        </div>
                                     {% endif %}
-                                    <div class="message-body">{{ message.body }}</div>
+                                    <div class="message-body">
+                                        {% if request.args.get('search') %}
+                                            {{ message.body|highlight(request.args.get('search')) }}
+                                        {% else %}
+                                            {{ message.body }}
+                                        {% endif %}
+                                    </div>
                                     <div class="message-time">
                                         {{ message.date.strftime('%Y-%m-%d %H:%M') if message.date else '' }}
                                     </div>

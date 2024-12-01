@@ -258,3 +258,20 @@
 #searchResults .dropdown-item:hover {
     background-color: #f8f9fa;
 }
+
+/* Search result highlighting */
+mark {
+    background-color: #fff3cd;
+    padding: 0.1em 0.2em;
+    border-radius: 2px;
+}
+
+.search-result-count {
+    display: inline-block;
+    padding: 0.25em 0.5em;
+    margin-top: 0.5em;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    font-size: 0.9em;
+    color: #6c757d;
+}
