@@ -142,8 +142,23 @@ html, body {
 .chat-header-content {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
     gap: 15px;
+}
+
+.chat-header-info {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.search-result-count {
+    font-size: 0.875rem;
+    color: #6c757d;
+    padding: 5px 10px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    margin: 5px 10px;
 }
 
 .search-form {
@@ -197,5 +212,9 @@ html, body {
 
     .chat-header {
         padding: 10px;
+    }
+
+    .search-result-count {
+        text-align: center;
     }
 }

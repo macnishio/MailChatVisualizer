@@ -17,6 +17,9 @@
                         </button>
                     </div>
                 </form>
+                <div class="search-result-count">
+                    検索結果: {{ contacts|length }}件
+                </div>
             </div>
             <div class="contacts-list">
                 {% for contact in contacts %}
@@ -38,7 +41,14 @@
             {% if request.args.get('contact') %}
                 <div class="chat-header">
                     <div class="chat-header-content">
-                        <h5 class="mb-0">{{ request.args.get('contact') }}</h5>
+                        <div class="chat-header-info">
+                            <h5 class="mb-0">{{ request.args.get('contact') }}</h5>
+                            {% if request.args.get('search') %}
+                            <div class="search-result-count">
+                                検索結果: {{ messages|length }}件
+                            </div>
+                            {% endif %}
+                        </div>
                         <form class="d-flex search-form" method="GET">
                             <input type="hidden" name="contact" value="{{ request.args.get('contact') }}">
                             <div class="input-group">
