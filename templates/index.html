@@ -7,18 +7,13 @@
         <div class="col-md-3 contacts-sidebar">
             <div class="contacts-header">
                 <h5>Contacts</h5>
-                <form class="contact-search-form" method="GET">
-                    <div class="input-group">
-                        <input type="search" name="contact_search" class="form-control" 
-                               placeholder="連絡先を検索..." 
-                               value="{{ request.args.get('contact_search', '') }}">
-                        <button class="btn btn-outline-primary" type="submit">
-                            <i class="fas fa-search"></i>
-                        </button>
-                    </div>
-                </form>
-                <div class="search-result-count">
-                    検索結果: {{ contacts|length }}件
+                <div class="contact-search">
+                    <input type="text" 
+                           id="contactSearch" 
+                           class="form-control" 
+                           placeholder="連絡先を検索..."
+                           autocomplete="off">
+                    <div id="searchResults" class="dropdown-menu"></div>
                 </div>
             </div>
             <div class="contacts-list">

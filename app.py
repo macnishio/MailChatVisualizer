@@ -89,6 +89,16 @@ def settings():
     
     return render_template('settings.html')
 
+@app.route('/api/search_contacts')
+def search_contacts():
+    query = request.args.get('q', '')
+    if len(query) >= 2:
+        contacts = db.session.query(EmailMessage.from_address).distinct()\
+            .filter(EmailMessage.from_address.ilike(f'%{query}%'))\
+            .limit(10).all()
+        return jsonify([contact[0] for contact in contacts if contact[0]])
+    return jsonify([])
+
 @app.route('/logout')
 def logout():
     session.clear()

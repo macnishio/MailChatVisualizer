@@ -1,6 +1,9 @@
 document.addEventListener('DOMContentLoaded', function() {
     const messagesContainer = document.querySelector('.messages-container');
     const currentContact = new URLSearchParams(window.location.search).get('contact');
+    const searchInput = document.getElementById('contactSearch');
+    const searchResults = document.getElementById('searchResults');
+    let debounceTimer;
     let currentPage = 1;
     let loading = false;
     let hasNextPage = true;
@@ -54,6 +57,39 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                const query = this.value;
+                if (query.length >= 2) {
+                    fetch(`/api/search_contacts?q=${encodeURIComponent(query)}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            searchResults.innerHTML = '';
+                            searchResults.classList.add('show');
+                            
+                            data.forEach(contact => {
+                                const item = document.createElement('a');
+                                item.className = 'dropdown-item';
+                                item.href = `/?contact=${encodeURIComponent(contact)}`;
+                                item.textContent = contact;
+                                searchResults.appendChild(item);
+                            });
+                        });
+                } else {
+                    searchResults.classList.remove('show');
+                }
+            }, 300);
+        });
+
+        // クリック以外での非表示
+        document.addEventListener('click', function(e) {
+            if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+                searchResults.classList.remove('show');
+            }
+        });
+    }
     // Add active class to current contact
     if (currentContact) {
         const contactLinks = document.querySelectorAll('.contact-item');
