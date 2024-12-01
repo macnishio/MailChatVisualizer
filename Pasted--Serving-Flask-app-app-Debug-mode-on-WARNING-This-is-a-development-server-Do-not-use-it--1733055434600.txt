@@ -1,0 +1,220 @@
+ * Serving Flask app 'app'
+ * Debug mode: on
+WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://172.31.196.89:5000
+Press CTRL+C to quit
+ * Restarting with stat
+ * Debugger is active!
+ * Debugger PIN: 895-741-815
+172.31.196.89 - - [01/Dec/2024 12:13:00] "GET / HTTP/1.1" 302 -
+172.31.196.89 - - [01/Dec/2024 12:13:00] "GET /settings HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:13:00] "GET /static/css/style.css HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:13:00] "GET /static/js/main.js HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:13:32] "GET / HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:13:32] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:13:32] "GET /static/js/main.js HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:13:54] "GET / HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:13:54] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:13:54] "GET /static/js/main.js HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:00] "GET / HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:00] "GET /static/js/main.js HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:00] "GET /static/css/style.css HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 6
+Subject: None
+Body length: 0
+---
+172.31.196.89 - - [01/Dec/2024 12:15:02] "GET /?contact="Money+Forward"+<feedback@moneyforward.com> HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:03] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:03] "GET /static/js/main.js HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 135
+Subject: None
+Body length: 0
+---
+172.31.196.89 - - [01/Dec/2024 12:15:04] "GET /?contact=<noreply@zohosalesiq.com> HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:04] "GET /static/js/main.js HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:04] "GET /static/css/style.css HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 139
+Subject: None
+Body length: 0
+---
+172.31.196.89 - - [01/Dec/2024 12:15:06] "GET /?contact=Biz/Zine編集部+<support@bizzine.jp> HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:06] "GET /static/js/main.js HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:06] "GET /static/css/style.css HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 141
+Subject: None
+Body length: 0
+---
+172.31.196.89 - - [01/Dec/2024 12:15:07] "GET /?contact=CodeZine編集部+<support@codezine.jp> HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:07] "GET /static/js/main.js HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:07] "GET /static/css/style.css HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 145
+Subject: None
+Body length: 0
+---
+172.31.196.89 - - [01/Dec/2024 12:15:09] "GET /?contact=Pinterest+<recommendations@discover.pinterest.com> HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:09] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:09] "GET /static/js/main.js HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 0
+172.31.196.89 - - [01/Dec/2024 12:15:11] "GET /?contact=SmartHR+<no-reply@smarthr.jp> HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:11] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:11] "GET /static/js/main.js HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 146
+Subject: None
+Body length: 0
+---
+172.31.196.89 - - [01/Dec/2024 12:15:12] "GET /?contact=StatusIQ+<no-reply@mails.site24x7sp.eu> HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:12] "GET /static/js/main.js HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:12] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:19] "GET /logout HTTP/1.1" 302 -
+172.31.196.89 - - [01/Dec/2024 12:15:19] "GET /settings HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:20] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:20] "GET /static/js/main.js HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:27] "POST /settings HTTP/1.1" 302 -
+172.31.196.89 - - [01/Dec/2024 12:15:27] "GET / HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:27] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:27] "GET /static/js/main.js HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 6
+Subject: None
+Body length: 0
+---
+172.31.196.89 - - [01/Dec/2024 12:15:29] "GET /?contact="Money+Forward"+<feedback@moneyforward.com> HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:29] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:29] "GET /static/js/main.js HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 139
+Subject: None
+Body length: 0
+---
+172.31.196.89 - - [01/Dec/2024 12:15:30] "GET /?contact=Biz/Zine編集部+<support@bizzine.jp> HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:30] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:30] "GET /static/js/main.js HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 141
+Subject: None
+Body length: 0
+---
+172.31.196.89 - - [01/Dec/2024 12:15:31] "GET /?contact=CodeZine編集部+<support@codezine.jp> HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:31] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:31] "GET /static/js/main.js HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 156
+Subject: None
+Body length: 0
+---
+172.31.196.89 - - [01/Dec/2024 12:15:34] "GET /?contact=三井住友カード<mail@contact.vpass.ne.jp> HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:34] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:34] "GET /static/js/main.js HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 150
+Subject: None
+Body length: 0
+---
+172.31.196.89 - - [01/Dec/2024 12:15:35] "GET /?contact=noreply-dmarc-support@google.com HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:36] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:36] "GET /static/js/main.js HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 0
+172.31.196.89 - - [01/Dec/2024 12:15:37] "GET /?contact=翔泳社+Book+News+<sebn_support@shoeisha.co.jp> HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:38] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:38] "GET /static/js/main.js HTTP/1.1" 304 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 139
+Subject: None
+Body length: 0
+---
+172.31.196.89 - - [01/Dec/2024 12:15:38] "GET /?contact=Biz/Zine編集部+<support@bizzine.jp> HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:39] "GET /static/js/main.js HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:39] "GET /static/css/style.css HTTP/1.1" 304 -
+検索クエリ: ta
+検索結果: [('Anthropic <invoice+statements@mail.anthropic.com>',), ('StatusIQ <no-reply@mails.site24x7sp.eu>',), ('mail@notification.zohodataprep.com',), ('「天神」株式会社タオ<info@tao-st.co.jp>',), ('【翔泳社の通販】SEshop<contactus@seshop.com>',), ('アイオープラザ <ioplaza-mag@iodata.jp>',), ('三井住友カード<mail@contact.vpass.ne.jp>',), ('元大證券 <webmaster@mhu.yuanta.com.tw>',), ('元大銀行 <epaper@mail01u.yuantabank.com.tw>',), ('臺灣銀行(Bank of Taiwan)<bot@mail.bot.com.tw>',)]
+172.31.196.89 - - [01/Dec/2024 12:15:42] "GET /api/search_contacts?q=ta HTTP/1.1" 200 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 91
+Subject: None
+Body length: 0
+---
+172.31.196.89 - - [01/Dec/2024 12:15:46] "GET /?contact=「天神」株式会社タオ<info@tao-st.co.jp> HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:15:47] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:15:47] "GET /static/js/main.js HTTP/1.1" 304 -
+検索クエリ: 台湾
+検索結果: []
+172.31.196.89 - - [01/Dec/2024 12:15:51] "GET /api/search_contacts?q=台湾 HTTP/1.1" 200 -
+検索クエリ: 台湾
+検索結果: []
+172.31.196.89 - - [01/Dec/2024 12:15:52] "GET /api/search_contacts?q=台湾 HTTP/1.1" 200 -
+検索クエリ: タイワン
+検索結果: []
+172.31.196.89 - - [01/Dec/2024 12:15:57] "GET /api/search_contacts?q=タイワン HTTP/1.1" 200 -
+検索クエリ: 大弯
+検索結果: []
+172.31.196.89 - - [01/Dec/2024 12:15:58] "GET /api/search_contacts?q=大弯 HTTP/1.1" 200 -
+検索クエリ: 臺灣
+検索結果: [('臺灣銀行(Bank of Taiwan)<bot@mail.bot.com.tw>',)]
+172.31.196.89 - - [01/Dec/2024 12:15:59] "GET /api/search_contacts?q=臺灣 HTTP/1.1" 200 -
+検索クエリ: 臺灣
+検索結果: [('臺灣銀行(Bank of Taiwan)<bot@mail.bot.com.tw>',)]
+172.31.196.89 - - [01/Dec/2024 12:16:00] "GET /api/search_contacts?q=臺灣 HTTP/1.1" 200 -
+SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+Total messages found: 1
+Message ID: 121
+Subject: None
+Body length: 0
+---
+172.31.196.89 - - [01/Dec/2024 12:16:01] "GET /?contact=臺灣銀行(Bank%20of%20Taiwan)<bot@mail.bot.com.tw> HTTP/1.1" 200 -
+172.31.196.89 - - [01/Dec/2024 12:16:02] "GET /static/css/style.css HTTP/1.1" 304 -
+172.31.196.89 - - [01/Dec/2024 12:16:02] "GET /static/js/main.js HTTP/1.1" 304 -

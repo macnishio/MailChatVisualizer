@@ -36,22 +36,27 @@ def sync_emails(email, password, imap_server):
                                 email_body = msg_data[0][1]
                                 msg = handler.parse_email_message(email_body)
                                 
-                                # Check if message already exists
-                                existing_message = session.query(EmailMessage)\
-                                    .filter_by(message_id=msg['message_id'])\
-                                    .first()
-                                if not existing_message:
-                                    new_message = EmailMessage(
-                                        message_id=msg['message_id'],
-                                        from_address=msg['from'],
-                                        to_address=msg['to'],
-                                        subject=msg['subject'],
-                                        body=msg['body'],
-                                        date=msg['date'],
-                                        is_sent=msg['is_sent'],
-                                        folder=str(folder)
-                                    )
-                                    session.add(new_message)
+                                if msg['message_id']:  # メッセージIDが存在する場合のみ処理
+                                    # Check if message already exists
+                                    existing_message = session.query(EmailMessage)\
+                                        .filter_by(message_id=msg['message_id'])\
+                                        .first()
+                                    
+                                    if not existing_message:
+                                        print(f"新規メッセージを保存: ID={msg['message_id']}, Subject={msg['subject']}")
+                                        new_message = EmailMessage(
+                                            message_id=msg['message_id'],
+                                            from_address=msg['from'],
+                                            to_address=msg['to'],
+                                            subject=msg['subject'],
+                                            body=msg['body'],
+                                            date=msg['date'],
+                                            is_sent=msg['is_sent'],
+                                            folder=str(folder),
+                                            last_sync=datetime.utcnow()
+                                        )
+                                        session.add(new_message)
+                                        session.flush()  # 即座にデータベースに反映
                                     
                             except Exception as e:
                                 print(f"Message processing error: {str(e)}")

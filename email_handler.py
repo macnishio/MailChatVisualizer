@@ -43,24 +43,49 @@ class EmailHandler:
         
         body = ""
         if msg.is_multipart():
+            # マルチパートメッセージの処理
             for part in msg.walk():
-                if part.get_content_type() == "text/plain":
-                    payload = part.get_payload(decode=True)
-                    if payload:
-                        body = payload.decode('utf-8', errors='replace')
-                        break
+                content_type = part.get_content_type()
+                if content_type == "text/plain":
+                    try:
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            charset = part.get_content_charset() or 'utf-8'
+                            body = payload.decode(charset, errors='replace')
+                            break
+                    except Exception as e:
+                        print(f"メッセージ本文のデコードエラー: {str(e)}")
+                        continue
         else:
-            payload = msg.get_payload(decode=True)
-            if payload:
-                body = payload.decode('utf-8', errors='replace')
+            # シングルパートメッセージの処理
+            try:
+                payload = msg.get_payload(decode=True)
+                if payload:
+                    charset = msg.get_content_charset() or 'utf-8'
+                    body = payload.decode(charset, errors='replace')
+            except Exception as e:
+                print(f"シングルパートメッセージのデコードエラー: {str(e)}")
+
+        # メッセージIDが存在しない場合は生成
+        message_id = msg['message-id']
+        if not message_id:
+            from hashlib import md5
+            unique_str = f"{msg['from']}{msg['to']}{msg['date']}{body[:100]}"
+            message_id = f"<{md5(unique_str.encode()).hexdigest()}@generated>"
+
+        # 日付の処理
+        try:
+            date = parsedate_to_datetime(msg['date'])
+        except:
+            date = datetime.utcnow()
 
         return {
-            'message_id': msg['message-id'],
+            'message_id': message_id,
             'from': self.decode_str(msg['from']),
             'to': self.decode_str(msg['to']),
             'subject': self.decode_str(msg['subject']),
             'body': body,
-            'date': parsedate_to_datetime(msg['date']),
+            'date': date,
             'is_sent': self.email_address in self.decode_str(msg['from'])
         }
 
