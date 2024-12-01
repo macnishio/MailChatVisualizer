@@ -112,10 +112,11 @@ class EmailHandler:
                 criteria.append(f'(OR FROM "{email}" TO "{email}")')
         if search_query:
             try:
-                # UTF-8で検索クエリを処理
-                criteria.append(f'(OR SUBJECT "{search_query}" BODY "{search_query}")')
+                # UTF-7でエンコード
+                encoded_query = search_query.encode('utf-7').decode('ascii')
+                criteria.append(f'(OR SUBJECT {encoded_query} BODY {encoded_query})')
             except Exception as e:
-                print(f"検索クエリ処理エラー: {str(e)}")
+                print(f"検索クエリエンコードエラー: {str(e)}")
         return ' '.join(criteria) if criteria else 'ALL'
 
     def get_contacts(self):
@@ -174,7 +175,11 @@ class EmailHandler:
                 
                 try:
                     criteria = self.build_search_criteria(contact_email, search_query)
-                    _, nums = self.conn.search(None, criteria)
+                    if criteria != 'ALL':
+                        search_cmd = f'CHARSET UTF-8 {criteria}'
+                    else:
+                        search_cmd = criteria
+                    _, nums = self.conn.search(None, search_cmd)
                     if not nums[0]:
                         continue
                         
