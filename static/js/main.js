@@ -63,6 +63,7 @@ document.addEventListener('DOMContentLoaded', function() {
         searchInput.addEventListener('input', function() {
             clearTimeout(debounceTimer);
             const query = this.value.trim();
+            console.log('入力値:', query);  // デバッグログ
             
             if (query.length < 2) {
                 searchResults.classList.remove('show');
@@ -70,9 +71,11 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             debounceTimer = setTimeout(() => {
+                console.log('API呼び出し:', query);  // デバッグログ
                 fetch(`/api/search_contacts?q=${encodeURIComponent(query)}`)
                     .then(response => response.json())
                     .then(data => {
+                        console.log('検索結果:', data);  // デバッグログ
                         searchResults.innerHTML = '';
                         if (data.length > 0) {
                             data.forEach(contact => {

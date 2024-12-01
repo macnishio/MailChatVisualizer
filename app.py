@@ -92,8 +92,14 @@ def settings():
 @app.route('/api/search_contacts')
 def search_contacts():
     query = request.args.get('q', '')
+    print(f"検索クエリ: {query}")  # デバッグログ
+    
     if len(query) >= 2:
         try:
+            # 強制的にメール同期を実行
+            if 'email' in session:
+                sync_emails(session['email'], session['password'], session['imap_server'])
+            
             # データベースから検索
             contacts = db.session.query(EmailMessage.from_address)\
                 .filter(EmailMessage.from_address.ilike(f'%{query}%'))\
@@ -101,7 +107,8 @@ def search_contacts():
                 .limit(10)\
                 .all()
             
-            # 結果を整形
+            print(f"検索結果: {contacts}")  # デバッグログ
+            
             results = []
             for contact in contacts:
                 if contact[0]:  # Noneでないことを確認
@@ -109,7 +116,7 @@ def search_contacts():
             
             return jsonify(results)
         except Exception as e:
-            print(f"連絡先検索エラー: {str(e)}")
+            print(f"連絡先検索エラー: {str(e)}")  # デバッグログ
             return jsonify([])
     return jsonify([])
 
