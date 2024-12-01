@@ -1,4 +1,5 @@
 import os
+import traceback
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 from email_handler import EmailHandler
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -8,6 +9,7 @@ from celery_worker import sync_emails
 from datetime import datetime
 from database import session_scope
 from flask_caching import Cache
+from sqlalchemy import text
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "your-secret-key"
@@ -58,43 +60,53 @@ def index():
     
     if selected_contact:
         try:
-            # クエリの構築
-            messages_query = EmailMessage.query.filter(
-                db.or_(
-                    EmailMessage.from_address == selected_contact,
-                    EmailMessage.to_address == selected_contact
-                )
-            ).order_by(EmailMessage.date.desc())
-            
-            if search_query:
-                messages_query = messages_query.filter(
+            with db.session.begin():
+                messages_query = EmailMessage.query.filter(
                     db.or_(
-                        EmailMessage.subject.ilike(f'%{search_query}%'),
-                        EmailMessage.body.ilike(f'%{search_query}%')
+                        EmailMessage.from_address == selected_contact,
+                        EmailMessage.to_address == selected_contact
                     )
-                )
-            
-            # 全件数を取得
-            total = messages_query.count()
-            
-            # 現在のページのメッセージを取得
-            current_messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
-            
-            # メッセージデータを辞書に変換
-            messages_dict['message_list'] = [{
-                'id': msg.id,
-                'subject': msg.subject,
-                'body': msg.body,
-                'date': msg.date,
-                'is_sent': msg.is_sent
-            } for msg in current_messages]
-            
-            messages_dict['total'] = total
-            messages_dict['has_next'] = (page * per_page) < total
-            messages_dict['next_page'] = page + 1 if (page * per_page) < total else None
-            
+                ).order_by(EmailMessage.date.desc())
+                
+                # デバッグ用：クエリの内容を出力
+                print(f"SQL Query: {messages_query}")
+                
+                if search_query:
+                    messages_query = messages_query.filter(
+                        db.or_(
+                            EmailMessage.subject.ilike(f'%{search_query}%'),
+                            EmailMessage.body.ilike(f'%{search_query}%')
+                        )
+                    )
+                
+                # デバッグ用：取得したメッセージの数を出力
+                total = messages_query.count()
+                print(f"Total messages found: {total}")
+                
+                current_messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
+                
+                # デバッグ用：各メッセージの内容を確認
+                for msg in current_messages:
+                    print(f"Message ID: {msg.id}")
+                    print(f"Subject: {msg.subject}")
+                    print(f"Body length: {len(msg.body) if msg.body else 0}")
+                    print("---")
+                
+                messages_dict['message_list'] = [{
+                    'id': msg.id,
+                    'subject': msg.subject,
+                    'body': msg.body,
+                    'date': msg.date,
+                    'is_sent': msg.is_sent
+                } for msg in current_messages]
+                
+                messages_dict['total'] = total
+                messages_dict['has_next'] = (page * per_page) < total
+                messages_dict['next_page'] = page + 1 if (page * per_page) < total else None
+                
         except Exception as e:
             print(f"メッセージ取得エラー: {str(e)}")
+            traceback.print_exc()  # スタックトレースを出力
     
     # テンプレートにデータを渡す
     return render_template(
