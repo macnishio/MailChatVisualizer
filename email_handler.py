@@ -147,7 +147,7 @@ class EmailHandler:
                 print(f"検索クエリエラー: {str(e)}")
         return ' '.join(criteria) if criteria else 'ALL'
 
-    def get_contacts(self, search_query=None):
+    def get_contacts(self, search_query=None, batch_size=1000):
         """メールの連絡先一覧を取得する"""
         contacts = set()
         try:
@@ -163,24 +163,34 @@ class EmailHandler:
 
                 try:
                     _, messages = self.conn.search(None, 'ALL')
-                    for num in messages[0].split()[-100:]:  # 最新100件
-                        try:
-                            _, msg_data = self.conn.fetch(num, '(RFC822)')
-                            email_body = msg_data[0][1]
-                            msg = email.message_from_bytes(email_body)
-                            
-                            if folder == b'INBOX':
-                                from_addr = self.decode_str(msg['from'])
-                                if from_addr and (not search_query or search_query.lower() in from_addr.lower()):
-                                    contacts.add(from_addr)
-                            else:
-                                to_addr = self.decode_str(msg['to'])
-                                if to_addr and (not search_query or search_query.lower() in to_addr.lower()):
-                                    contacts.add(to_addr)
-                        except Exception as e:
-                            print(f"メッセージ処理エラー: {str(e)}")
+                    message_nums = messages[0].split()
+                    total_messages = len(message_nums)
+                    
+                    # バッチ処理でメッセージを取得
+                    for i in range(0, total_messages, batch_size):
+                        batch = message_nums[i:i + batch_size]
+                        for num in batch:
+                            try:
+                                _, msg_data = self.conn.fetch(num, '(RFC822)')
+                                email_body = msg_data[0][1]
+                                msg = email.message_from_bytes(email_body)
+                                
+                                if folder == b'INBOX':
+                                    from_addr = self.decode_str(msg['from'])
+                                    if from_addr and (not search_query or search_query.lower() in from_addr.lower()):
+                                        contacts.add(from_addr)
+                                else:
+                                    to_addr = self.decode_str(msg['to'])
+                                    if to_addr and (not search_query or search_query.lower() in to_addr.lower()):
+                                        contacts.add(to_addr)
+                            except Exception as e:
+                                print(f"メッセージ処理エラー: {str(e)}")
+                                continue
+                                
                 except Exception as e:
                     print(f"フォルダー処理エラー ({folder}): {str(e)}")
+                    continue
+                    
         except Exception as e:
             print(f"連絡先取得エラー: {str(e)}")
             self.check_connection()
