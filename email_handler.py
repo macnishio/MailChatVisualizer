@@ -5,8 +5,6 @@ import datetime
 from email.utils import parsedate_to_datetime
 import re
 
-GMAIL_SENT_FOLDER = '&BBkEWQQlBDsENQQ9BD0ESwQ1-/&kAFP4W4IMH8w4TD8MOs-'  # [Gmail]/送信済みメール
-
 class EmailHandler:
     def __init__(self, email_address, password, imap_server):
         self.email_address = email_address
@@ -63,7 +61,6 @@ class EmailHandler:
         if isinstance(folder, bytes):
             return folder
         try:
-            # UTF-7でエンコード
             return folder.encode('utf-7')
         except Exception as e:
             print(f"フォルダー名エンコードエラー: {str(e)}")
@@ -85,30 +82,46 @@ class EmailHandler:
             print(f"フォルダー選択エラー ({folder}): {str(e)}")
             return False
 
+    def get_gmail_folders(self):
+        """Gmailフォルダー名を取得"""
+        try:
+            _, folders = self.conn.list('', '[Gmail]*')
+            sent_folder = None
+            for folder in folders:
+                folder_name = folder.decode().split('"/"')[-1].strip('"')
+                if '送信済み' in folder_name or 'Sent' in folder_name:
+                    sent_folder = folder_name
+                    break
+            return sent_folder
+        except Exception as e:
+            print(f"Gmailフォルダー取得エラー: {str(e)}")
+            return None
+
     def build_search_criteria(self, contact_email, search_query):
         """検索条件を構築する"""
         criteria = []
         if contact_email:
-            # メールアドレスからの検索条件
             email_part = re.search(r'<(.+?)>', contact_email)
             if email_part:
                 email = email_part.group(1)
                 criteria.append(f'(OR FROM "{email}" TO "{email}")')
         if search_query:
-            # 検索クエリのエンコーディング
-            query = search_query.encode('utf-7').decode()
-            criteria.append(f'(OR SUBJECT "{query}" BODY "{query}")')
-        return '(' + ' '.join(criteria) + ')' if criteria else 'ALL'
+            try:
+                # UTF-8で検索クエリを処理
+                criteria.append(f'(OR SUBJECT "{search_query}" BODY "{search_query}")')
+            except Exception as e:
+                print(f"検索クエリ処理エラー: {str(e)}")
+        return ' '.join(criteria) if criteria else 'ALL'
 
     def get_contacts(self):
         """メールの連絡先一覧を取得する"""
         contacts = set()
         try:
             self.check_connection()
-            folders = [
-                b'INBOX',
-                self.encode_folder_name(GMAIL_SENT_FOLDER)
-            ]
+            sent_folder = self.get_gmail_folders()
+            folders = [b'INBOX']
+            if sent_folder:
+                folders.append(sent_folder)
             
             for folder in folders:
                 if not self.select_folder(folder):
@@ -145,10 +158,10 @@ class EmailHandler:
         messages = []
         try:
             self.check_connection()
-            folders = [
-                b'INBOX',
-                self.encode_folder_name(GMAIL_SENT_FOLDER)
-            ]
+            sent_folder = self.get_gmail_folders()
+            folders = [b'INBOX']
+            if sent_folder:
+                folders.append(sent_folder)
             
             for folder in folders:
                 if not self.select_folder(folder):
