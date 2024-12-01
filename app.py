@@ -7,57 +7,47 @@ from models import EmailMessage, EmailSettings
 from celery_worker import sync_emails
 from datetime import datetime
 from database import session_scope
+from flask_caching import Cache
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "your-secret-key"
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///email_chat.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# キャッシュ設定
+cache = Cache(config={
+    'CACHE_TYPE': 'simple'
+})
+cache.init_app(app)
 db.init_app(app)
 
 @app.route('/')
 def index():
     if 'email' not in session:
         return redirect(url_for('settings'))
-    
-    # メール同期を強制実行
-    try:
-        handler = EmailHandler(
-            session['email'],
-            session['password'],
-            session['imap_server']
-        )
-        messages = handler.get_contacts()
         
-        # データベースに保存
-        with session_scope() as db_session:
-            for msg in messages:
-                # 既存の連絡先をチェック
-                existing = db_session.query(EmailMessage).filter_by(
-                    from_address=msg
-                ).first()
-                
-                if not existing:
-                    new_message = EmailMessage(
-                        from_address=msg,
-                        date=datetime.utcnow()
-                    )
-                    db_session.add(new_message)
-        
-        handler.disconnect()
-    except Exception as e:
-        print(f"初期同期エラー: {str(e)}")
+    # キャッシュから連絡先を取得
+    contacts = cache.get('contacts')
+    if not contacts:
+        try:
+            handler = EmailHandler(
+                session['email'],
+                session['password'],
+                session['imap_server']
+            )
+            contacts = handler.get_contacts()
+            handler.disconnect()
+            
+            # キャッシュに保存（1時間）
+            cache.set('contacts', contacts, timeout=3600)
+        except Exception as e:
+            print(f"連絡先取得エラー: {str(e)}")
+            contacts = []
     
-    # 以降は既存のコード
-    page = request.args.get('page', 1, type=int)
-    per_page = 20
+    # 検索フィルタリング
     contact_search = request.args.get('contact_search', '')
-    
-    contacts_query = db.session.query(EmailMessage.from_address).distinct()
     if contact_search:
-        contacts_query = contacts_query.filter(
-            EmailMessage.from_address.ilike(f'%{contact_search}%')
-        )
-    contacts = [contact[0] for contact in contacts_query.all() if contact[0]]
+        contacts = [c for c in contacts if contact_search.lower() in c.lower()]
     
     messages = []
     selected_contact = request.args.get('contact')

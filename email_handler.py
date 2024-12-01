@@ -152,42 +152,37 @@ class EmailHandler:
         contacts = set()
         try:
             self.check_connection()
-            sent_folder = self.get_gmail_folders()
-            folders = [b'INBOX']
-            if sent_folder:
-                folders.append(sent_folder)
             
-            for folder in folders:
-                if not self.select_folder(folder):
-                    continue
-
-                try:
-                    # SORTの代わりにSEARCHを使用
-                    _, messages = self.conn.search(None, 'ALL')
-                    message_nums = messages[0].split()
-                    
-                    # 最新のメッセージから処理（limitで制限）
-                    for num in message_nums[-limit:]:
-                        try:
-                            _, msg_data = self.conn.fetch(num, '(RFC822)')
-                            email_body = msg_data[0][1]
-                            msg = email.message_from_bytes(email_body)
-                            
+            # IMAPコマンドを最適化
+            search_cmd = '(SINCE "1-Jan-2024")'  # 最近のメールのみを対象
+            
+            # メールヘッダーのみを取得
+            self.conn.select('INBOX', readonly=True)
+            _, messages = self.conn.search(None, search_cmd)
+            
+            # 最新のメッセージから処理
+            message_nums = messages[0].split()[-limit:]
+            
+            # バッチ処理でヘッダー情報を取得
+            for i in range(0, len(message_nums), 10):  # 10件ずつ処理
+                batch = message_nums[i:i+10]
+                for num in batch:
+                    try:
+                        # ヘッダーのみを取得
+                        _, msg_data = self.conn.fetch(num, '(BODY[HEADER.FIELDS (FROM)])')
+                        if msg_data[0]:
+                            header_data = msg_data[0][1]
+                            msg = email.message_from_bytes(header_data)
                             from_addr = self.decode_str(msg['from'])
                             if from_addr:
                                 if not search_query or search_query.lower() in from_addr.lower():
                                     contacts.add(from_addr)
-                            
-                        except Exception as e:
-                            print(f"メッセージ処理エラー: {str(e)}")
-                            continue
-                            
-                except Exception as e:
-                    print(f"フォルダー処理エラー ({folder}): {str(e)}")
-                    continue
-                    
+                    except Exception as e:
+                        print(f"ヘッダー処理エラー: {str(e)}")
+                        continue
+            
             return sorted(list(contacts))
-                    
+            
         except Exception as e:
             print(f"連絡先取得エラー: {str(e)}")
             self.check_connection()

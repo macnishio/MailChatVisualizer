@@ -11,4 +11,5 @@ dependencies = [
     "redis",
     "flask-migrate",
     "celery",
+    "flask-caching>=2.3.0",
 ]
