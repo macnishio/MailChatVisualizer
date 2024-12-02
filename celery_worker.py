@@ -114,6 +114,8 @@ def sync_emails(email, password, imap_server):
                                                 message_id=parsed_msg['message_id'],
                                                 from_address=parsed_msg['from'],
                                                 to_address=parsed_msg['to'],
+                                                from_contact_id=parsed_msg['from_contact_id'],
+                                                to_contact_id=parsed_msg['to_contact_id'],
                                                 subject=subject,
                                                 body=body,
                                                 date=parsed_msg['date'],

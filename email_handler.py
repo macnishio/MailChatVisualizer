@@ -533,6 +533,8 @@ class EmailHandler:
 
     def parse_email_message(self, email_body):
         """メールメッセージをパースしてディクショナリを返す"""
+        from models import Contact, db
+
         msg = email.message_from_bytes(email_body)
 
         try:
@@ -564,14 +566,56 @@ class EmailHandler:
             if not body:
                 body = "(本文なし)"
 
+            # メールアドレスを抽出
+            from_str = self.decode_str(msg['from'])
+            to_str = self.decode_str(msg['to'])
+            
+            def extract_email(header_str):
+                if not header_str:
+                    return None, None
+                match = re.search(r'<(.+?)>', header_str)
+                if match:
+                    email = match.group(1)
+                    display_name = header_str[:match.start()].strip(' "\'')
+                    return email, display_name or email
+                return header_str, header_str
+
+            from_email, from_display = extract_email(from_str)
+            to_email, to_display = extract_email(to_str)
+
+            # ContactとEmailMessageの関連付け
+            from_contact = None
+            to_contact = None
+
+            if from_email:
+                from_contact = Contact.query.filter_by(
+                    normalized_email=Contact.normalize_email(from_email)
+                ).first()
+                if not from_contact:
+                    from_contact = Contact(email=from_email, display_name=from_display)
+                    db.session.add(from_contact)
+
+            if to_email:
+                to_contact = Contact.query.filter_by(
+                    normalized_email=Contact.normalize_email(to_email)
+                ).first()
+                if not to_contact:
+                    to_contact = Contact(email=to_email, display_name=to_display)
+                    db.session.add(to_contact)
+
+            if from_contact or to_contact:
+                db.session.commit()
+
             return {
                 'message_id': msg['message-id'],
-                'from': self.decode_str(msg['from']),
-                'to': self.decode_str(msg['to']),
+                'from': from_str,
+                'to': to_str,
+                'from_contact_id': from_contact.id if from_contact else None,
+                'to_contact_id': to_contact.id if to_contact else None,
                 'subject': subject,
                 'body': body,
                 'date': parsedate_to_datetime(msg['date']),
-                'is_sent': self.email_address and self.email_address in self.decode_str(msg['from']) if self.email_address else False
+                'is_sent': self.email_address and self.email_address in from_str if self.email_address else False
             }
 
         except Exception as e:

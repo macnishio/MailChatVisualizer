@@ -45,19 +45,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 'page': 1 // 並び替え変更時はページを1に戻す
             });
         });
-            
-            // 新しいURLを構築
-            const newUrl = new URL(window.location.origin + window.location.pathname);
-            newUrl.search = newParams.toString();
-            
-            // アニメーション効果を追加してページ遷移
-            document.body.style.opacity = '0.5';
-            document.body.style.transition = 'opacity 0.3s ease';
-            
-            setTimeout(() => {
-                window.location.href = newUrl.toString();
-            }, 300);
-        });
     }
     
     // メッセージの展開機能
@@ -101,18 +88,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 .then(data => {
                     if (data.messages && data.messages.length > 0) {
                         data.messages.forEach(message => {
-                            const messageDiv = document.createElement('div');
-                            messageDiv.className = `message ${message.is_sent ? 'sent' : 'received'}`;
-                            messageDiv.innerHTML = `
-                                <div class="message-content">
-                                    ${message.body}
-                                    <div class="message-time">
-                                        ${new Date(message.date).toLocaleString()}
+                                const messageDiv = document.createElement('div');
+                                messageDiv.className = `message ${message.is_sent ? 'sent' : 'received'}`;
+                                messageDiv.innerHTML = `
+                                    <div class="message-content">
+                                        ${message.body || ''}
+                                        <div class="message-time">
+                                            ${new Date(message.date).toLocaleString()}
+                                        </div>
                                     </div>
-                                </div>
-                            `;
-                            messagesContainer.appendChild(messageDiv);
-                        });
+                                `;
+                                messagesContainer.appendChild(messageDiv);
+                            });
+                        }
                         hasNextPage = data.has_next;
                     } else {
                         hasNextPage = false;

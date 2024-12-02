@@ -1,6 +1,7 @@
 import os
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
-from models import db, EmailMessage
+from flask_migrate import Migrate
+from models import db, EmailMessage, EmailSettings
 import traceback
 from email_handler import EmailHandler
 from database import session_scope
@@ -38,6 +39,7 @@ def create_app():
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     cache.init_app(app)
     db.init_app(app)
+    migrate = Migrate(app, db)
     return app
 
 app = create_app()
