@@ -16,12 +16,16 @@ app_logger = logging.getLogger('mailchat')
 # Connection pool for IMAP connections
 _connection_pool = {}
 _pool_lock = threading.Lock()
-MAX_CONNECTIONS = 3  # 同時接続数を減らして安定性を向上
-CONNECTION_TIMEOUT = 60  # タイムアウトを60秒に延長
-MAX_RETRIES = 5  # リトライ回数を増やす
-RETRY_DELAY = 5  # リトライ間隔を5秒に延長
-BATCH_SIZE = 20  # 一度に処理するメッセージ数
-RECONNECT_INTERVAL = 300  # 5分ごとに再接続
+# 接続設定の最適化
+MAX_CONNECTIONS = 1  # スロットリング対策として同時接続数を最小化
+CONNECTION_TIMEOUT = 20  # タイムアウトをさらに短縮
+MAX_RETRIES = 5  # リトライ回数を増やして信頼性を向上
+RETRY_DELAY = 3  # 初期リトライ間隔を調整
+BATCH_SIZE = 5  # バッチサイズをさらに小さく
+RECONNECT_INTERVAL = 120  # 再接続間隔を2分に短縮
+KEEPALIVE_INTERVAL = 30  # キープアライブ間隔を短縮
+THROTTLE_BACKOFF = 60  # スロットリング時の待機時間（秒）
+MAX_FOLDER_RETRY = 3  # フォルダー操作の最大リトライ回数
 
 class EmailHandler:
     def __init__(self, email_address=None, password=None, imap_server=None):
@@ -35,33 +39,61 @@ class EmailHandler:
         self.current_folder = None
 
     def connect(self):
-        """IMAPサーバーに接続（コネクションプール対応・最適化版）"""
+        """IMAPサーバーに接続（スロットリング対応・最適化版）"""
+        last_error = None
         for retry in range(MAX_RETRIES):
             try:
                 with _pool_lock:
+                    # キープアライブタイマーの初期化
+                    self.last_keepalive = time.time()
                     # プール内の期限切れ接続をクリーンアップ
                     current_time = time.time()
                     for key in list(_connection_pool.keys()):
                         conn_info = _connection_pool[key]
-                        if current_time - conn_info['last_activity'] > CONNECTION_TIMEOUT:
+                        if current_time - conn_info['last_activity'] > CONNECTION_TIMEOUT or \
+                           current_time - conn_info['created_at'] > RECONNECT_INTERVAL or \
+                           conn_info.get('throttled', False):
                             try:
                                 conn_info['connection'].logout()
-                            except:
-                                pass
+                            except Exception as e:
+                                app_logger.warning(f"Logout failed for expired connection {key}: {str(e)}")
                             del _connection_pool[key]
-                            app_logger.debug(f"Removed expired connection: {key}")
+                            app_logger.debug(f"Removed expired/throttled connection: {key}")
+
+                    # スロットリング状態のチェック
+                    if hasattr(self, 'throttled_until') and time.time() < self.throttled_until:
+                        wait_time = self.throttled_until - time.time()
+                        app_logger.debug(f"Waiting for throttling timeout: {wait_time:.1f} seconds")
+                        time.sleep(min(wait_time, THROTTLE_BACKOFF))
+                        continue
 
                     # 既存の接続を再利用
                     if self.connection_key in _connection_pool:
                         conn_info = _connection_pool[self.connection_key]
                         try:
-                            # NOOPコマンドで接続状態を確認
-                            status, _ = conn_info['connection'].noop()
-                            if status == 'OK':
-                                self.connection = conn_info['connection']
-                                conn_info['last_activity'] = time.time()
-                                app_logger.debug("Reusing existing connection")
-                                return True
+                            # 厳密な接続状態チェック
+                            status, response = conn_info['connection'].noop()
+                            
+                            # スロットリング検出
+                            if isinstance(response, list) and response and b'THROTTLED' in response[0]:
+                                app_logger.warning("Connection throttled, backing off...")
+                                conn_info['throttled'] = True
+                                self.throttled_until = time.time() + THROTTLE_BACKOFF
+                                raise Exception("Connection throttled")
+                            
+                            if status != 'OK':
+                                raise Exception(f"NOOP failed with status: {status}")
+                            
+                            # SELECT状態のリセット
+                            try:
+                                conn_info['connection'].close()
+                            except:
+                                pass
+                            
+                            self.connection = conn_info['connection']
+                            conn_info['last_activity'] = time.time()
+                            app_logger.debug("Reusing existing connection")
+                            return True
                         except Exception as e:
                             app_logger.warning(f"Connection reuse failed: {str(e)}")
                             try:
@@ -104,7 +136,7 @@ class EmailHandler:
             except Exception as e:
                 app_logger.error(f"Connection attempt {retry + 1} failed: {str(e)}")
                 if retry < MAX_RETRIES - 1:
-                    time.sleep(RETRY_DELAY * (retry + 1))  # 指数バックオフ
+                    time.sleep(RETRY_DELAY * (2 ** retry))  # 指数バックオフ
                 else:
                     raise
 
@@ -139,11 +171,27 @@ class EmailHandler:
             self.disconnect()  # 接続をリセット
             return False
 
+    def keep_alive(self):
+        """接続をキープアライブするためのNOOPコマンドを実行"""
+        try:
+            if self.connection and time.time() - self.last_keepalive > KEEPALIVE_INTERVAL:
+                status, _ = self.connection.noop()
+                if status != 'OK':
+                    raise Exception("NOOP failed")
+                self.last_keepalive = time.time()
+                app_logger.debug("Keep-alive NOOP successful")
+                return True
+            return True
+        except Exception as e:
+            app_logger.error(f"Keep-alive failed: {str(e)}")
+            return False
+
     def check_new_emails(self):
         """新着メールを確認し、パースして返す（最適化版）"""
         new_emails = []
         last_reconnect = time.time()
         connection_error_count = 0
+        batch_delay = 0.5  # バッチ間の待機時間（秒）
         
         try:
             if not self.connect():
@@ -317,34 +365,59 @@ class EmailHandler:
             pass
 
     def test_connection(self):
-        """IMAPサーバーへの接続をテストする"""
+        """IMAPサーバーへの接続をテストする（改善版）"""
         app_logger.debug(f"=== Test Connection Started ===")
         app_logger.debug(f"Server: {self.imap_server}")
         app_logger.debug(f"Email: {self.email_address}")
 
         try:
-            app_logger.debug("Attempting IMAP connection...")
-            self.connect()  # 修正した connect メソッドを使用
-            app_logger.debug("IMAP connection successful")
+            for retry in range(MAX_RETRIES):
+                try:
+                    app_logger.debug(f"Connection attempt {retry + 1}/{MAX_RETRIES}")
+                    if not self.connect():
+                        raise Exception("Failed to establish connection")
+                    app_logger.debug("IMAP connection successful")
 
-            app_logger.debug("Listing folders...")
-            _, folders = self.connection.list()
+                    # フォルダーリスト取得時のタイムアウト処理
+                    def list_folders():
+                        import socket
+                        socket.setdefaulttimeout(CONNECTION_TIMEOUT)
+                        return self.connection.list()
 
-            app_logger.debug("Available folders:")
-            for folder in folders:
-                decoded_folder = self.decode_folder_name(folder)
-                app_logger.debug(f"Folder: {decoded_folder}")
+                    app_logger.debug("Listing folders...")
+                    _, folders = list_folders()
 
-            app_logger.debug("=== Test Connection Successful ===")
-            return True
+                    if not folders:
+                        raise Exception("No folders returned")
 
-        except Exception as e:
-            app_logger.error(f"Connection test failed: {str(e)}", exc_info=True)
-            return False
+                    app_logger.debug("Available folders:")
+                    for folder in folders:
+                        decoded_folder = self.decode_folder_name(folder)
+                        app_logger.debug(f"Folder: {decoded_folder}")
+
+                    # 接続状態の最終確認
+                    status, _ = self.connection.noop()
+                    if status != 'OK':
+                        raise Exception("Final NOOP check failed")
+
+                    app_logger.debug("=== Test Connection Successful ===")
+                    return True
+
+                except Exception as e:
+                    app_logger.error(f"Connection attempt {retry + 1} failed: {str(e)}")
+                    if retry < MAX_RETRIES - 1:
+                        backoff_time = RETRY_DELAY * (2 ** retry)  # 指数バックオフ
+                        app_logger.debug(f"Retrying in {backoff_time} seconds...")
+                        time.sleep(backoff_time)
+                        self.disconnect()  # 再試行前に接続をクリーンアップ
+                    else:
+                        app_logger.error("All connection attempts failed")
+                        return False
         finally:
             app_logger.debug("Closing connection...")
             self.disconnect()
             app_logger.debug("=== Test Connection Completed ===")
+
     
     def get_conversation(self, contact_email, search_query=None):
         """特定の連絡先とのメール会話を取得する"""
