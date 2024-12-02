@@ -40,7 +40,7 @@
                             <h5 class="mb-0">{{ request.args.get('contact') }}</h5>
                             {% if request.args.get('search') %}
                                 <div class="search-result-count">
-                                    検索結果: {{ messages.items|length }}件
+                                    検索結果: {{ messages.message_list|length }}件
                                 </div>
                             {% else %}
                                 <div class="total-messages-count">
