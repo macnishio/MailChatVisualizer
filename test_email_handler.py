@@ -87,26 +87,55 @@ def test_message_search():
             
             # テストデータの作成
             messages = [
+                # 送信メール
+                {
+                    'subject': '送信メール1',
+                    'body': 'sender1@example.comへの送信メール本文です。',
+                    'from_address': 'me@example.com',
+                    'to_address': 'sender1@example.com',
+                    'message_id': '<sent1@example.com>',
+                    'is_sent': True
+                },
+                {
+                    'subject': '送信メール2',
+                    'body': 'sender2@example.comへの送信メール本文です。',
+                    'from_address': 'me@example.com',
+                    'to_address': 'sender2@example.com',
+                    'message_id': '<sent2@example.com>',
+                    'is_sent': True
+                },
+                {
+                    'subject': '送信メール3',
+                    'body': 'sender3@example.comへの送信メール本文です。',
+                    'from_address': 'me@example.com',
+                    'to_address': 'sender3@example.com',
+                    'message_id': '<sent3@example.com>',
+                    'is_sent': True
+                },
+                # 受信メール
                 {
                     'subject': 'テスト件名：重要なお知らせ',
                     'body': 'これは重要なテスト本文です。',
                     'from_address': 'sender1@example.com',
-                    'to_address': 'recipient1@example.com',
+                    'to_address': 'me@example.com',
                     'message_id': '<test1@example.com>',
+                    'is_sent': False
                 },
                 {
                     'subject': '会議の案内',
                     'body': 'これは重要な会議についてのお知らせです。',
                     'from_address': 'sender2@example.com',
-                    'to_address': 'recipient2@example.com',
+                    'to_address': 'me@example.com',
                     'message_id': '<test2@example.com>',
+                    'is_sent': False
                 },
                 {
                     'subject': '一般的な連絡',
                     'body': 'これは一般的な連絡事項です。',
                     'from_address': 'sender3@example.com',
-                    'to_address': 'recipient3@example.com',
+                    'to_address': 'me@example.com',
                     'message_id': '<test3@example.com>',
+                    'is_sent': False
                 }
             ]
             
@@ -126,18 +155,31 @@ def test_message_search():
                 db.session.add(message)
             db.session.commit()
             
-            # 検索テスト1：件名での検索
+            # 検索テスト1：送信メールの検索
             results = EmailMessage.query.filter(
-                EmailMessage.subject.ilike('%重要%')
+                EmailMessage.is_sent == True
             ).all()
-            assert len(results) == 1, "件名での検索結果が正しくありません"
-            assert results[0].subject == 'テスト件名：重要なお知らせ'
-            
-            # 検索テスト2：本文での検索
+            assert len(results) == 3, "送信メールの検索結果が正しくありません"
+            assert all(result.from_address == 'me@example.com' for result in results), "送信メールの送信者が正しくありません"
+
+            # 検索テスト2：受信メールの検索
+            results = EmailMessage.query.filter(
+                EmailMessage.is_sent == False
+            ).all()
+            assert len(results) == 3, "受信メールの検索結果が正しくありません"
+            assert all(result.to_address == 'me@example.com' for result in results), "受信メールの受信者が正しくありません"
+
+            # 検索テスト3：キーワード検索（件名）
+            results = EmailMessage.query.filter(
+                EmailMessage.subject.ilike('%送信%')
+            ).all()
+            assert len(results) == 3, "件名でのキーワード検索結果が正しくありません"
+
+            # 検索テスト4：キーワード検索（本文）
             results = EmailMessage.query.filter(
                 EmailMessage.body.ilike('%重要%')
             ).all()
-            assert len(results) == 2, "本文での検索結果が正しくありません"
+            assert len(results) == 2, "本文でのキーワード検索結果が正しくありません"
             
             print("\n=== 検索機能テスト成功 ===")
             print("メッセージ検索が正しく動作しています")
