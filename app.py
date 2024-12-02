@@ -130,6 +130,24 @@ def sync_emails_background(email_address, password, imap_server):
             try:
                 new_emails = background_handler.check_new_emails()
                 app_logger.debug(f"Background sync completed: {len(new_emails) if new_emails else 0} new emails")
+
+                # 独立したセッションスコープを使用してメールデータを保存
+                with session_scope() as scoped_session:
+                    for parsed_msg in new_emails:
+                        existing_email = scoped_session.query(EmailMessage).filter_by(message_id=parsed_msg['message_id']).first()
+                        if not existing_email:
+                            new_email = EmailMessage(
+                                message_id=parsed_msg['message_id'],
+                                from_address=parsed_msg['from'],
+                                to_address=parsed_msg['to'],
+                                subject=parsed_msg['subject'],
+                                body=parsed_msg['body'],
+                                date=parsed_msg['date'],
+                                is_sent=parsed_msg.get('is_sent', False),
+                                folder=parsed_msg.get('folder', '')
+                            )
+                            scoped_session.add(new_email)
+
             except Exception as e:
                 app_logger.error(f"Background sync error: {str(e)}")
             finally:
@@ -233,9 +251,9 @@ def index():
             messages_dict = cache.get(cache_key)
 
             if messages_dict is None:
-                with db.session.begin():
-                    messages_query = EmailMessage.query
+                messages_query = EmailMessage.query
 
+                try:
                     if selected_contact:
                         messages_query = messages_query.filter(
                             or_(
@@ -271,29 +289,38 @@ def index():
                     else:
                         messages_query = messages_query.order_by(EmailMessage.date.desc())
 
-                app_logger.debug(f"SQL Query: {messages_query}")
-                total = messages_query.count()
-                app_logger.debug(f"Total messages found: {total}")
+                    app_logger.debug(f"SQL Query: {messages_query}")
+                    total = messages_query.count()
+                    app_logger.debug(f"Total messages found: {total}")
 
-                current_messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
-                app_logger.debug(f"Retrieved {len(current_messages)} messages for current page")
+                    current_messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
+                    app_logger.debug(f"Retrieved {len(current_messages)} messages for current page")
 
-                messages_dict = {
-                    'message_list': [{
-                        'id': msg.id,
-                        'subject': msg.subject,
-                        'body': msg.body,
-                        'date': msg.date,
-                        'is_sent': msg.is_sent,
-                        'from_address': msg.from_address,
-                        'to_address': msg.to_address
-                    } for msg in current_messages],
-                    'total': total,
-                    'has_next': (page * per_page) < total,
-                    'next_page': page + 1 if (page * per_page) < total else None
-                }
+                    messages_dict = {
+                        'message_list': [{
+                            'id': msg.id,
+                            'subject': msg.subject,
+                            'body': msg.body,
+                            'date': msg.date,
+                            'is_sent': msg.is_sent,
+                            'from_address': msg.from_address,
+                            'to_address': msg.to_address
+                        } for msg in current_messages],
+                        'total': total,
+                        'has_next': (page * per_page) < total,
+                        'next_page': page + 1 if (page * per_page) < total else None
+                    }
 
-                cache.set(cache_key, messages_dict, timeout=600)
+                    cache.set(cache_key, messages_dict, timeout=600)
+                except Exception as e:
+                    app_logger.error(f"メッセージ取得エラー: {str(e)}")
+                    app_logger.error(traceback.format_exc())
+                    messages_dict = {
+                        'message_list': [],
+                        'total': 0,
+                        'has_next': False,
+                        'next_page': None
+                    }
 
         except Exception as e:
             app_logger.error(f"メッセージ取得エラー: {str(e)}")
