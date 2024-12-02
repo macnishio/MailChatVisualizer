@@ -90,22 +90,22 @@
                     </div>
                 </div>
                 <div class="messages-container">
-                    {% if messages and messages.get('message_list') %}
+                    {% if messages and messages.get('message_list', []) %}
                         {% for message in messages.get('message_list', []) %}
                             <div class="message {% if message.is_sent %}sent{% else %}received{% endif %}">
                                 <div class="message-content">
-                                    {% if message.subject %}
+                                    {% if message.get('subject') %}
                                         <div class="message-subject">
                                             {% if request.args.get('search') %}
-                                                {{ message.subject|highlight(request.args.get('search'))|safe }}
+                                                {{ message.get('subject','')|highlight(request.args.get('search'))|safe }}
                                             {% else %}
-                                                {{ message.subject }}
+                                                {{ message.get('subject','') }}
                                             {% endif %}
                                         </div>
                                     {% endif %}
                                     <div class="message-body">
                                         {% if request.args.get('search') %}
-                                            {% set highlighted_body = message.body|highlight(request.args.get('search'))|safe %}
+                                            {% set highlighted_body = message.get('body','')|highlight(request.args.get('search'))|safe %}
                                             {% if highlighted_body|length > 500 %}
                                                 <div class="message-preview">
                                                     {{ highlighted_body[:500] }}...
@@ -118,27 +118,28 @@
                                                 {{ highlighted_body }}
                                             {% endif %}
                                         {% else %}
-                                            {% if message.body|length > 500 %}
+                                            {% set body = message.get('body','') %}
+                                            {% if body|length > 500 %}
                                                 <div class="message-preview">
-                                                    {{ message.body[:500] }}...
+                                                    {{ body[:500] }}...
                                                     <button class="btn btn-link btn-sm show-full-message">続きを表示</button>
                                                 </div>
                                                 <div class="message-full" style="display: none;">
-                                                    {{ message.body }}
+                                                    {{ body }}
                                                 </div>
                                             {% else %}
-                                                {{ message.body }}
+                                                {{ body }}
                                             {% endif %}
                                         {% endif %}
                                     </div>
                                     <div class="message-time">
-                                        {{ message.date.strftime('%Y-%m-%d %H:%M') if message.date else '' }}
+                                        {{ message.get('date').strftime('%Y-%m-%d %H:%M') if message.get('date') else '' }}
                                     </div>
                                 </div>
                             </div>
                         {% endfor %}
                         
-                        {% if messages and messages.get('has_next') %}
+                        {% if messages and messages.get('has_next', False) %}
                             <div class="load-more">
                                 <a href="?contact={{ request.args.get('contact') }}&page={{ messages.get('next_page', 1) }}"
                                    class="btn btn-outline-primary">
