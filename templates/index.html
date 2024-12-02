@@ -68,11 +68,11 @@
                             <h5 class="mb-0">{{ request.args.get('contact') }}</h5>
                             {% if request.args.get('search') %}
                                 <div class="search-result-count">
-                                    検索結果: {{ messages.total if messages and messages.total is not none else 0 }}件
+                                    検索結果: {{ messages.get('total', 0) if messages else 0 }}件
                                 </div>
                             {% else %}
                                 <div class="total-messages-count">
-                                    全{{ messages.total if messages and messages.total is not none else 0 }}件のメッセージ
+                                    全{{ messages.get('total', 0) if messages else 0 }}件のメッセージ
                                 </div>
                             {% endif %}
                         </div>
@@ -90,8 +90,8 @@
                     </div>
                 </div>
                 <div class="messages-container">
-                    {% if messages and messages.message_list %}
-                        {% for message in messages.message_list %}
+                    {% if messages and messages.get('message_list') %}
+                        {% for message in messages.get('message_list', []) %}
                             <div class="message {% if message.is_sent %}sent{% else %}received{% endif %}">
                                 <div class="message-content">
                                     {% if message.subject %}
@@ -138,9 +138,9 @@
                             </div>
                         {% endfor %}
                         
-                        {% if messages.has_next %}
+                        {% if messages and messages.get('has_next') %}
                             <div class="load-more">
-                                <a href="?contact={{ request.args.get('contact') }}&page={{ messages.next_page }}"
+                                <a href="?contact={{ request.args.get('contact') }}&page={{ messages.get('next_page', 1) }}"
                                    class="btn btn-outline-primary">
                                     さらに読み込む
                                 </a>
