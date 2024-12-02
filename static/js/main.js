@@ -1,5 +1,17 @@
 document.addEventListener('DOMContentLoaded', function() {
     const messagesContainer = document.querySelector('.messages-container');
+    const pageSizeSelect = document.getElementById('pageSizeSelect');
+    
+    // ページサイズの変更を処理
+    if (pageSizeSelect) {
+        pageSizeSelect.addEventListener('change', function() {
+            const pageSize = this.value;
+            const currentUrl = new URL(window.location.href);
+            currentUrl.searchParams.set('per_page', pageSize);
+            currentUrl.searchParams.delete('page'); // ページを1に戻す
+            window.location.href = currentUrl.toString();
+        });
+    }
     
     // メッセージの展開機能
     document.querySelectorAll('.show-full-message').forEach(button => {

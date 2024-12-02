@@ -204,7 +204,12 @@ def index():
         return redirect(url_for('settings'))
 
     page = request.args.get('page', 1, type=int)
-    per_page = 20
+    per_page = request.args.get('per_page', 20, type=int)
+    
+    # Validate per_page value
+    allowed_page_sizes = [10, 20, 50, 100]
+    if per_page not in allowed_page_sizes:
+        per_page = 20
 
     # Get distinct contact count from database
     try:
@@ -340,7 +345,8 @@ def index():
         contacts_total=distinct_contacts,
         contacts_pagination=contacts_pagination,
         current_page=page,
-        search_query=search_query
+        search_query=search_query,
+        per_page=per_page
     )
 
 
