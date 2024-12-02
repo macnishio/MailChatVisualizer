@@ -1,0 +1,41 @@
+=== データベース内容 ===
+~/MailChatVisualizer$ py test_email_handler.py
+Traceback (most recent call last):
+  File "/home/runner/MailChatVisualizer/email_handler.py", line 19, in connect
+    self.conn = imaplib.IMAP4_SSL(self.imap_server)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/imaplib.py", line 1323, in __init__
+    IMAP4.__init__(self, host, port, timeout)
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/imaplib.py", line 202, in __init__
+    self.open(host, port, timeout)
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/imaplib.py", line 1336, in open
+    IMAP4.open(self, host, port, timeout)
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/imaplib.py", line 312, in open
+    self.sock = self._create_socket(timeout)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/imaplib.py", line 1326, in _create_socket
+    sock = IMAP4._create_socket(self, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/imaplib.py", line 302, in _create_socket
+    return socket.create_connection(address)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/socket.py", line 851, in create_connection
+    raise exceptions[0]
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/socket.py", line 836, in create_connection
+    sock.connect(sa)
+OSError: [Errno 99] Cannot assign requested address
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/runner/MailChatVisualizer/test_email_handler.py", line 76, in <module>
+    test_parse_email()
+  File "/home/runner/MailChatVisualizer/test_email_handler.py", line 27, in test_parse_email
+    handler = EmailHandler(None, None, None)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/email_handler.py", line 14, in __init__
+    self.connect()
+  File "/home/runner/MailChatVisualizer/email_handler.py", line 22, in connect
+    raise ConnectionError(f"IMAP接続エラー: {str(e)}")
+ConnectionError: IMAP接続エラー: [Errno 99] Cannot assign requested address
+~/MailChatVisualizer$ 

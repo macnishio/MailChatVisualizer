@@ -7,11 +7,11 @@ import re
 import traceback
 
 class EmailHandler:
-    def __init__(self, email_address, password, imap_server):
+    def __init__(self, email_address=None, password=None, imap_server=None):
         self.email_address = email_address
         self.password = password
         self.imap_server = imap_server
-        self.connect()
+        # 初期化時にconnectを呼び出さない
 
     def connect(self):
         """IMAPサーバーに接続し、認証を行う"""
