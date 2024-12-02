@@ -13,6 +13,14 @@ from models import db, EmailMessage  # EmailMessageもインポート
 # email_handler.py でもロガーを取得
 app_logger = logging.getLogger('mailchat')
 
+# Connection pool for IMAP connections
+_connection_pool = {}
+_pool_lock = threading.Lock()
+MAX_CONNECTIONS = 5
+CONNECTION_TIMEOUT = 30  # seconds
+MAX_RETRIES = 3
+RETRY_DELAY = 2  # seconds
+
 class EmailHandler:
     def __init__(self, email_address=None, password=None, imap_server=None):
         self.email_address = email_address
@@ -20,29 +28,65 @@ class EmailHandler:
         self.imap_server = imap_server
         self.connection = None
         self.connection_key = f"{email_address}:{imap_server}"
-        self._lock = threading.Lock()  # インスタンスごとのロックを追加
+        self._lock = threading.Lock()
+        self.last_activity = None
 
     def connect(self):
-        """IMAPサーバーに接続"""
-        with self._lock:
+        """IMAPサーバーに接続（コネクションプール対応）"""
+        for retry in range(MAX_RETRIES):
             try:
-                if self.connection:
-                    try:
-                        self.connection.noop()  # 接続が生きているか確認
-                        app_logger.debug("Reusing existing connection")
-                        return
-                    except:
-                        self.disconnect()
+                with _pool_lock:
+                    # プール内の期限切れ接続をクリーンアップ
+                    current_time = time.time()
+                    for key in list(_connection_pool.keys()):
+                        conn_info = _connection_pool[key]
+                        if current_time - conn_info['last_activity'] > CONNECTION_TIMEOUT:
+                            conn_info['connection'].logout()
+                            del _connection_pool[key]
 
-                app_logger.debug(f"Connecting to {self.imap_server}...")
-                self.connection = imaplib.IMAP4_SSL(self.imap_server)
-                self.connection.socket().settimeout(30)
-                app_logger.debug("IMAP4_SSL connection established")
+                    # 既存の接続を再利用
+                    if self.connection_key in _connection_pool:
+                        conn_info = _connection_pool[self.connection_key]
+                        try:
+                            conn_info['connection'].noop()
+                            self.connection = conn_info['connection']
+                            conn_info['last_activity'] = time.time()
+                            app_logger.debug("Reusing existing connection")
+                            return
+                        except:
+                            del _connection_pool[self.connection_key]
 
-                app_logger.debug("Attempting login...")
-                self.connection.login(self.email_address, self.password)
-                app_logger.debug("Login successful")
+                    # プールが最大数に達している場合、最も古い接続を切断
+                    if len(_connection_pool) >= MAX_CONNECTIONS:
+                        oldest_key = min(_connection_pool.keys(),
+                                       key=lambda k: _connection_pool[k]['last_activity'])
+                        _connection_pool[oldest_key]['connection'].logout()
+                        del _connection_pool[oldest_key]
 
+                    # 新規接続を作成
+                    app_logger.debug(f"Connecting to {self.imap_server}...")
+                    self.connection = imaplib.IMAP4_SSL(self.imap_server)
+                    self.connection.socket().settimeout(CONNECTION_TIMEOUT)
+                    app_logger.debug("IMAP4_SSL connection established")
+
+                    app_logger.debug("Attempting login...")
+                    self.connection.login(self.email_address, self.password)
+                    app_logger.debug("Login successful")
+
+                    # プールに追加
+                    _connection_pool[self.connection_key] = {
+                        'connection': self.connection,
+                        'last_activity': time.time()
+                    }
+                    return
+
+            except imaplib.IMAP4.error as e:
+                if "Too many simultaneous connections" in str(e) and retry < MAX_RETRIES - 1:
+                    app_logger.warning(f"Too many connections, retrying in {RETRY_DELAY} seconds...")
+                    time.sleep(RETRY_DELAY)
+                    continue
+                app_logger.error(f"IMAP connection error: {str(e)}")
+                raise
             except Exception as e:
                 app_logger.error(f"Connection error: {str(e)}")
                 self.disconnect()
@@ -79,17 +123,22 @@ class EmailHandler:
             app_logger.debug("=== Test Connection Completed ===")
     
     def disconnect(self):
-        """接続を切断"""
-        with self._lock:
-            if self.connection:
-                try:
-                    self.connection.close()
-                    self.connection.logout()
-                except:
-                    pass
-                finally:
-                    self.connection = None
-                    app_logger.debug("Connection closed and logged out")
+        """接続を切断（プール対応）"""
+        with _pool_lock:
+            try:
+                if self.connection_key in _connection_pool:
+                    try:
+                        _connection_pool[self.connection_key]['connection'].close()
+                        _connection_pool[self.connection_key]['connection'].logout()
+                    except:
+                        pass
+                    finally:
+                        del _connection_pool[self.connection_key]
+                        self.connection = None
+                        app_logger.debug("Connection removed from pool and logged out")
+            except Exception as e:
+                app_logger.error(f"Error during disconnect: {str(e)}")
+                self.connection = None
 
     def encode_folder_name(self, folder):
         """フォルダー名をUTF-7でエンコードする"""
