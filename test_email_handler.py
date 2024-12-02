@@ -148,7 +148,7 @@ def test_message_search():
                     subject=msg_data['subject'],
                     body=msg_data['body'],
                     date=datetime.utcnow(),
-                    is_sent=False,
+                    is_sent=msg_data['is_sent'],
                     folder='INBOX',
                     last_sync=datetime.utcnow()
                 )
