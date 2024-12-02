@@ -1,0 +1,82 @@
+2024-12-02 23:40:39,746 - mailchat - DEBUG - Started background email sync
+2024-12-02 23:40:39,752 - mailchat - DEBUG - SQL Query: SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_contact_id AS email_message_from_contact_id, email_message.to_contact_id AS email_message_to_contact_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC
+2024-12-02 23:40:39,755 - mailchat - ERROR - メッセージ取得エラー: (sqlite3.OperationalError) no such column: email_message.from_contact_id
+[SQL: SELECT count(*) AS count_1 
+FROM (SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_contact_id AS email_message_from_contact_id, email_message.to_contact_id AS email_message_to_contact_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC) AS anon_1]
+[parameters: ('Stripe <notifications@stripe.com>', 'Stripe <notifications@stripe.com>')]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2024-12-02 23:40:39,760 - mailchat - ERROR - Traceback (most recent call last):
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 941, in do_execute
+    cursor.execute(statement, parameters)
+sqlite3.OperationalError: no such column: email_message.from_contact_id
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/home/runner/MailChatVisualizer/app.py", line 321, in index
+    total = messages_query.count()
+            ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/query.py", line 3113, in count
+    self._legacy_from_self(col).enable_eagerloads(False).scalar()
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/query.py", line 2805, in scalar
+    ret = self.one()
+          ^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/query.py", line 2778, in one
+    return self._iter().one()  # type: ignore
+           ^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/query.py", line 2827, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 2362, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 2247, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/context.py", line 305, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1418, in execute
+    return meth(
+           ^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/sql/elements.py", line 515, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1640, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 2355, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 941, in do_execute
+    cursor.execute(statement, parameters)
+sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such column: email_message.from_contact_id
+[SQL: SELECT count(*) AS count_1 
+FROM (SELECT email_message.id AS email_message_id, email_message.message_id AS email_message_message_id, email_message.from_contact_id AS email_message_from_contact_id, email_message.to_contact_id AS email_message_to_contact_id, email_message.from_address AS email_message_from_address, email_message.to_address AS email_message_to_address, email_message.subject AS email_message_subject, email_message.body AS email_message_body, email_message.date AS email_message_date, email_message.is_sent AS email_message_is_sent, email_message.folder AS email_message_folder, email_message.last_sync AS email_message_last_sync 
+FROM email_message 
+WHERE email_message.from_address = ? OR email_message.to_address = ? ORDER BY email_message.date DESC) AS anon_1]
+[parameters: ('Stripe <notifications@stripe.com>', 'Stripe <notifications@stripe.com>')]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+
+2024-12-02 23:40:39,762 - werkzeug - INFO - 127.0.0.1 - - [02/Dec/2024 23:40:39] "GET /?contact=Stripe+<notifications@stripe.com> HTTP/1.1" 200 -
+2024-12-02 23:40:40,037 - werkzeug - INFO - 127.0.0.1 - - [02/Dec/2024 23:40:40] "GET /static/css/style.css HTTP/1.1" 304 -
+2024-12-02 23:40:40,123 - werkzeug - INFO - 127.0.0.1 - - [02/Dec/2024 23:40:40] "GET /static/js/main.js HTTP/1.1" 304 -
+2024-12-02 23:40:40,442 - mailchat - DEBUG - Attempting login...
+2024-12-02 23:40:40,971 - mailchat - DEBUG - Login successful
+2024-12-02 23:40:40,971 - mailchat - DEBUG - Background handler connected
+2024-12-02 23:40:41,912 - mailchat - DEBUG - Reusing existing connection
+2024-12-02 23:40:42,458 - mailchat - DEBUG - Reusing existing connection
+2024-12-02 23:40:44,553 - mailchat - DEBUG - Selected folder: INBOX
+2024-12-02 23:40:45,228 - mailchat - DEBUG - Found 1978 messages in INBOX

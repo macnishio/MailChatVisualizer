@@ -24,7 +24,37 @@ class Contact(db.Model):
         """メールアドレスを正規化する"""
         if not email:
             return None
-        return email.lower().strip()
+            
+        # 表示名とメールアドレスを分離
+        match = re.match(r'"?([^"<]+)"?\s*<?([^>]+)>?', email)
+        if match:
+            email = match.group(2)
+        
+        # メールアドレスを小文字に変換し、空白を削除
+        normalized = email.lower().strip()
+        # 特殊文字を削除（スペース、タブ、改行）
+        normalized = re.sub(r'\s+', '', normalized)
+        return normalized
+
+    @classmethod
+    def find_or_create(cls, email, display_name=None):
+        """
+        正規化されたメールアドレスに基づいて連絡先を検索または作成する
+        """
+        normalized_email = cls.normalize_email(email)
+        if not normalized_email:
+            return None
+            
+        contact = cls.query.filter_by(normalized_email=normalized_email).first()
+        if not contact:
+            contact = cls(
+                email=email,
+                display_name=display_name or email,
+                normalized_email=normalized_email
+            )
+            db.session.add(contact)
+            db.session.commit()
+        return contact
 
 class EmailSettings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -35,8 +65,8 @@ class EmailSettings(db.Model):
 class EmailMessage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     message_id = db.Column(db.String(255), unique=True)
-    from_contact_id = db.Column(db.Integer, db.ForeignKey('contact.id'), nullable=True)
-    to_contact_id = db.Column(db.Integer, db.ForeignKey('contact.id'), nullable=True)
+    from_contact_id = db.Column(db.Integer, db.ForeignKey('contact.id', ondelete='SET NULL'), nullable=True)
+    to_contact_id = db.Column(db.Integer, db.ForeignKey('contact.id', ondelete='SET NULL'), nullable=True)
     from_address = db.Column(db.String(255), index=True)  # 後方互換性のために保持
     to_address = db.Column(db.String(255), index=True)    # 後方互換性のために保持
     subject = db.Column(db.Text)
