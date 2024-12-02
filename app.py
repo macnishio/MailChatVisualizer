@@ -234,12 +234,13 @@ def index():
         contacts_pagination = None
         flash("連絡先の取得に失敗しました。", "error")
 
-    # Initialize messages dictionary
+    # Initialize messages dictionary with default values
     messages_dict = {
         'message_list': [],
         'total': 0,
         'has_next': False,
-        'next_page': None
+        'next_page': None,
+        'error': None
     }
 
     selected_contact = request.args.get('contact')
@@ -251,9 +252,10 @@ def index():
             messages_dict = cache.get(cache_key)
 
             if messages_dict is None:
-                messages_query = EmailMessage.query
+                # セッションを管理するために session_scope を使用
+                with session_scope() as scoped_session:
+                    messages_query = scoped_session.query(EmailMessage)
 
-                try:
                     if selected_contact:
                         messages_query = messages_query.filter(
                             or_(
@@ -312,29 +314,26 @@ def index():
                     }
 
                     cache.set(cache_key, messages_dict, timeout=600)
-                except Exception as e:
-                    app_logger.error(f"メッセージ取得エラー: {str(e)}")
-                    app_logger.error(traceback.format_exc())
-                    messages_dict = {
-                        'message_list': [],
-                        'total': 0,
-                        'has_next': False,
-                        'next_page': None
-                    }
 
         except Exception as e:
             app_logger.error(f"メッセージ取得エラー: {str(e)}")
             app_logger.error(traceback.format_exc())
+            messages_dict = {
+                'message_list': [],
+                'total': 0,
+                'has_next': False,
+                'next_page': None,
+                'error': str(e)
+            }
 
     return render_template(
         'index.html',
         messages=messages_dict,
         contacts=contacts,
-        contacts_pagination=contacts_pagination,
-        total_contacts=distinct_contacts,
         current_page=page,
         search_query=search_query
     )
+
 
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():
