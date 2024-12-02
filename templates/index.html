@@ -6,7 +6,7 @@
         <!-- Contacts Sidebar -->
         <div class="col-md-3 contacts-sidebar">
             <div class="contacts-header">
-                <h5>Contacts ({{ total_contacts }}件)</h5>
+                <h5>Contacts ({{ contacts|length if contacts else 0 }}件)</h5>
                 <div class="contact-search">
                     <input type="text" 
                            id="contactSearch" 
@@ -68,11 +68,11 @@
                             <h5 class="mb-0">{{ request.args.get('contact') }}</h5>
                             {% if request.args.get('search') %}
                                 <div class="search-result-count">
-                                    検索結果: {{ messages.message_list|length if messages and messages.message_list else 0 }}件
+                                    検索結果: {{ messages.total if messages and messages.total is not none else 0 }}件
                                 </div>
                             {% else %}
                                 <div class="total-messages-count">
-                                    全{{ messages.message_list|length if messages and messages.message_list else 0 }}件のメッセージ
+                                    全{{ messages.total if messages and messages.total is not none else 0 }}件のメッセージ
                                 </div>
                             {% endif %}
                         </div>
