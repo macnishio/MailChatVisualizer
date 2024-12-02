@@ -68,11 +68,11 @@
                             <h5 class="mb-0">{{ request.args.get('contact') }}</h5>
                             {% if request.args.get('search') %}
                                 <div class="search-result-count">
-                                    検索結果: {{ (messages.message_list|length if messages and messages.message_list else 0)|int }}件
+                                    検索結果: {{ messages.message_list|length if messages and messages.message_list else 0 }}件
                                 </div>
                             {% else %}
                                 <div class="total-messages-count">
-                                    全{{ (messages.message_list|length if messages and messages.message_list else 0)|int }}件のメッセージ
+                                    全{{ messages.message_list|length if messages and messages.message_list else 0 }}件のメッセージ
                                 </div>
                             {% endif %}
                         </div>
