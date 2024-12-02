@@ -89,7 +89,7 @@ class EmailHandler:
                 'subject': subject,
                 'body': body,
                 'date': parsedate_to_datetime(msg['date']),
-                'is_sent': self.email_address in self.decode_str(msg['from'])
+                'is_sent': self.email_address and self.email_address in self.decode_str(msg['from']) if self.email_address else False
             }
             
         except Exception as e:

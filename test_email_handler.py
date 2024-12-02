@@ -1,5 +1,6 @@
 from app import create_app, db
 from models import EmailMessage
+from email_handler import EmailHandler  # この行を追加
 from sqlalchemy import text
 import email
 from email.message import EmailMessage as EmailMsg
