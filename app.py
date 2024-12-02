@@ -2,15 +2,15 @@ import os
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 from models import db, EmailMessage
 import traceback
-from email_handler import EmailHandler  # EmailConnectionPoolのインポートを削除
+from email_handler import EmailHandler
 from database import session_scope
 from flask_caching import Cache
-from sqlalchemy import text, or_, and_, case
+from sqlalchemy import text, or_, and_, case, func
 import re
 import unicodedata
 import time
-from functools import wraps  # 追加
-import threading  # 追加
+from functools import wraps
+import threading
 import logging
 import sys
 
@@ -29,7 +29,6 @@ app_logger.setLevel(logging.DEBUG)
 logging.getLogger('imaplib').setLevel(logging.DEBUG)
 
 # キャッシュ設定
-# グローバルスコープでキャッシュを定義
 cache = Cache(config={'CACHE_TYPE': 'simple'})
 
 def create_app():
@@ -37,15 +36,9 @@ def create_app():
     app.secret_key = os.environ.get("FLASK_SECRET_KEY") or "your-secret-key"
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///email_chat.db"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-    # キャッシュを初期化
     cache.init_app(app)
     db.init_app(app)
-
     return app
-
-app = create_app()
-# キャッシュを明示的に初期化
 
 app = create_app()
 
@@ -150,88 +143,98 @@ def sync_emails_background(email_address, password, imap_server):
 @app.route('/')
 @with_connection_control
 def index():
-   # セッションからフラッシュメッセージをクリア
-   if '_flashes' in session:
-       session.pop('_flashes')
+    if '_flashes' in session:
+        session.pop('_flashes')
 
-   app_logger.debug(f"Session contents: {session}")
+    app_logger.debug(f"Session contents: {session}")
 
-   if 'email' not in session:
-       app_logger.debug("No email in session, redirecting to settings")
-       flash("メールの設定が必要です", "info")
-       return redirect(url_for('settings'))
+    if 'email' not in session:
+        app_logger.debug("No email in session, redirecting to settings")
+        flash("メールの設定が必要です", "info")
+        return redirect(url_for('settings'))
 
-   app_logger.debug(f"Attempting to connect with email: {session['email']}")
+    app_logger.debug(f"Attempting to connect with email: {session['email']}")
 
-   # IMAPハンドラーの作成
-   handler = EmailHandler(
-       email_address=session['email'],
-       password=session['password'],
-       imap_server=session['imap_server']
+    handler = EmailHandler(
+        email_address=session['email'],
+        password=session['password'],
+        imap_server=session['imap_server']
     )
-    
-   try:
-       app_logger.debug("Starting connection test...")
-       test_result = handler.test_connection()
-       app_logger.debug(f"Connection test result: {test_result}")
 
-       if not test_result:
-           flash("メールサーバーへの接続テストに失敗しました", "error")
-           app_logger.error("Connection test failed")
-           return redirect(url_for('settings'))
+    try:
+        app_logger.debug("Starting connection test...")
+        test_result = handler.test_connection()
+        app_logger.debug(f"Connection test result: {test_result}")
 
-       # バックグラウンドでメール同期を開始
-       sync_thread = threading.Thread(
-           target=sync_emails_background,
-           args=(session['email'], session['password'], session['imap_server']),
-           daemon=True
-       )
-       sync_thread.start()
-       app_logger.debug("Started background email sync")
-       flash("メールの同期をバックグラウンドで開始しました", "info")  # ユーザーに通知を追加
+        if not test_result:
+            flash("メールサーバーへの接続テストに失敗しました", "error")
+            app_logger.error("Connection test failed")
+            return redirect(url_for('settings'))
 
-   except Exception as e:
-       app_logger.error(f"Connection error: {str(e)}", exc_info=True)
-       flash(f"接続エラー: {str(e)}", "error")
-       return redirect(url_for('settings'))
-    
-   page = request.args.get('page', 1, type=int)
-   per_page = 20
+        sync_thread = threading.Thread(
+            target=sync_emails_background,
+            args=(session['email'], session['password'], session['imap_server']),
+            daemon=True
+        )
+        sync_thread.start()
+        app_logger.debug("Started background email sync")
+        flash("メールの同期をバックグラウンドで開始しました", "info")
 
-   # 連絡先の取得（キャッシュあり）
-   contacts = cache.get('contacts')
-   if not contacts:
-       try:
-           contacts = handler.get_contacts()
-           if contacts:
-               cache.set('contacts', contacts, timeout=3600)
-           else:
-               contacts = []
-       except Exception as e:
-           app_logger.error(f"連絡先取得エラー: {str(e)}")
-           contacts = []
-           flash("連絡先の取得に失敗しました。", "error")
+    except Exception as e:
+        app_logger.error(f"Connection error: {str(e)}", exc_info=True)
+        flash(f"接続エラー: {str(e)}", "error")
+        return redirect(url_for('settings'))
 
-   # メッセージデータの初期化
-   messages_dict = {
-       'message_list': [],
-       'total': 0,
-       'has_next': False,
-       'next_page': None
-   }
+    page = request.args.get('page', 1, type=int)
+    per_page = 20
 
-   selected_contact = request.args.get('contact')
-   search_query = request.args.get('search')
+    # Get distinct contact count from database
+    try:
+        distinct_contacts = EmailMessage.query.with_entities(
+            EmailMessage.from_address
+        ).distinct().count()
+    except Exception as e:
+        app_logger.error(f"連絡先取得エラー: {str(e)}")
+        distinct_contacts = 0
+        flash("連絡先の取得に失敗しました。", "error")
 
-   if selected_contact or search_query:
+    # Get paginated contacts
+    try:
+        contacts_query = EmailMessage.query.with_entities(
+            EmailMessage.from_address
+        ).distinct().order_by(EmailMessage.from_address)
+        
+        contacts_pagination = contacts_query.paginate(
+            page=page,
+            per_page=per_page,
+            error_out=False
+        )
+        contacts = [contact[0] for contact in contacts_pagination.items if contact[0]]
+    except Exception as e:
+        app_logger.error(f"連絡先取得エラー: {str(e)}")
+        contacts = []
+        contacts_pagination = None
+        flash("連絡先の取得に失敗しました。", "error")
+
+    # Initialize messages dictionary
+    messages_dict = {
+        'message_list': [],
+        'total': 0,
+        'has_next': False,
+        'next_page': None
+    }
+
+    selected_contact = request.args.get('contact')
+    search_query = request.args.get('search')
+
+    if selected_contact or search_query:
         try:
             cache_key = f'messages:{selected_contact}:{search_query}:{page}'
             messages_dict = cache.get(cache_key)
 
             if messages_dict is None:
-                # セッションを管理するために session_scope を使用
-                with session_scope() as scoped_session:
-                    messages_query = scoped_session.query(EmailMessage)
+                with db.session.begin():
+                    messages_query = EmailMessage.query
 
                     if selected_contact:
                         messages_query = messages_query.filter(
@@ -268,44 +271,43 @@ def index():
                     else:
                         messages_query = messages_query.order_by(EmailMessage.date.desc())
 
-                    app_logger.debug(f"SQL Query: {messages_query}")
-                    total = messages_query.count()
-                    app_logger.debug(f"Total messages found: {total}")
+                app_logger.debug(f"SQL Query: {messages_query}")
+                total = messages_query.count()
+                app_logger.debug(f"Total messages found: {total}")
 
-                    current_messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
-                    app_logger.debug(f"Retrieved {len(current_messages)} messages for current page")
+                current_messages = messages_query.offset((page - 1) * per_page).limit(per_page).all()
+                app_logger.debug(f"Retrieved {len(current_messages)} messages for current page")
 
-                    messages_dict = {
-                        'message_list': [{
-                            'id': msg.id,
-                            'subject': msg.subject,
-                            'body': msg.body,
-                            'date': msg.date,
-                            'is_sent': msg.is_sent,
-                            'from_address': msg.from_address,
-                            'to_address': msg.to_address
-                        } for msg in current_messages],
-                        'total': total,
-                        'has_next': (page * per_page) < total,
-                        'next_page': page + 1 if (page * per_page) < total else None
-                    }
+                messages_dict = {
+                    'message_list': [{
+                        'id': msg.id,
+                        'subject': msg.subject,
+                        'body': msg.body,
+                        'date': msg.date,
+                        'is_sent': msg.is_sent,
+                        'from_address': msg.from_address,
+                        'to_address': msg.to_address
+                    } for msg in current_messages],
+                    'total': total,
+                    'has_next': (page * per_page) < total,
+                    'next_page': page + 1 if (page * per_page) < total else None
+                }
 
-                    cache.set(cache_key, messages_dict, timeout=600)
+                cache.set(cache_key, messages_dict, timeout=600)
 
         except Exception as e:
             app_logger.error(f"メッセージ取得エラー: {str(e)}")
             app_logger.error(traceback.format_exc())
 
-        return render_template(
+    return render_template(
         'index.html',
         messages=messages_dict,
         contacts=contacts,
+        contacts_pagination=contacts_pagination,
+        total_contacts=distinct_contacts,
         current_page=page,
         search_query=search_query
     )
-
-
-
 
 @app.route('/settings', methods=['GET', 'POST'])
 def settings():

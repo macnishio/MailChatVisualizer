@@ -13,76 +13,40 @@ from models import db, EmailMessage  # EmailMessageもインポート
 # email_handler.py でもロガーを取得
 app_logger = logging.getLogger('mailchat')
 
-import imaplib
-import logging
-import time
-
-app_logger = logging.getLogger('mailchat')
-
 class EmailHandler:
     def __init__(self, email_address=None, password=None, imap_server=None):
         self.email_address = email_address
         self.password = password
         self.imap_server = imap_server
         self.connection = None
+        self.connection_key = f"{email_address}:{imap_server}"
+        self._lock = threading.Lock()  # インスタンスごとのロックを追加
 
     def connect(self):
         """IMAPサーバーに接続"""
-        try:
-            if self.connection:
-                try:
-                    # 接続が生きているか確認
-                    self.connection.noop()
-                    app_logger.debug("Reusing existing connection")
-                    return
-                except:
-                    # 失敗したら再接続
-                    self.disconnect()
+        with self._lock:
+            try:
+                if self.connection:
+                    try:
+                        self.connection.noop()  # 接続が生きているか確認
+                        app_logger.debug("Reusing existing connection")
+                        return
+                    except:
+                        self.disconnect()
 
-            app_logger.debug(f"Connecting to {self.imap_server}...")
-            self.connection = imaplib.IMAP4_SSL(self.imap_server)
-            self.connection.socket().settimeout(30)
-            app_logger.debug("IMAP4_SSL connection established")
-
-            # 状態がNONAUTHであることを確認してからログイン
-            if self.connection.state != 'NONAUTH':
-                self.disconnect()  # 接続をリセット
-                app_logger.debug("Reconnecting to reset state...")
+                app_logger.debug(f"Connecting to {self.imap_server}...")
                 self.connection = imaplib.IMAP4_SSL(self.imap_server)
                 self.connection.socket().settimeout(30)
+                app_logger.debug("IMAP4_SSL connection established")
 
-            app_logger.debug("Attempting login...")
-            self.connection.login(self.email_address, self.password)
-            app_logger.debug("Login successful")
+                app_logger.debug("Attempting login...")
+                self.connection.login(self.email_address, self.password)
+                app_logger.debug("Login successful")
 
-        except imaplib.IMAP4.error as e:
-            if "Too many simultaneous connections" in str(e):
-                app_logger.error("Connection error: Too many simultaneous connections. Retrying after a delay...")
-                time.sleep(5)  # 5秒待機してリトライ
-                self.connect()  # 再接続を試行
-            else:
+            except Exception as e:
                 app_logger.error(f"Connection error: {str(e)}")
                 self.disconnect()
                 raise
-
-    def disconnect(self):
-        """接続を切断"""
-        if self.connection:
-            try:
-                # SELECTED状態のときのみCLOSEを実行
-                if self.connection.state == 'SELECTED':
-                    self.connection.close()
-                    app_logger.debug("Folder closed")
-
-                # 最後にログアウトを実行
-                self.connection.logout()
-                app_logger.debug("Connection logged out")
-
-            except imaplib.IMAP4.error as e:
-                app_logger.error(f"Error during disconnection: {str(e)}")
-            finally:
-                self.connection = None
-                app_logger.debug("Connection closed")
 
     def test_connection(self):
         """IMAPサーバーへの接続をテストする"""
@@ -92,19 +56,16 @@ class EmailHandler:
 
         try:
             app_logger.debug("Attempting IMAP connection...")
-            self.connect()
+            self.connect()  # 修正した connect メソッドを使用
             app_logger.debug("IMAP connection successful")
 
-            # フォルダー一覧を取得して接続を確認
             app_logger.debug("Listing folders...")
-            status, folders = self.connection.list()
-
-            if status != 'OK':
-                raise imaplib.IMAP4.error(f"Failed to list folders: {status}")
+            _, folders = self.connection.list()
 
             app_logger.debug("Available folders:")
             for folder in folders:
-                app_logger.debug(f"Folder: {folder.decode('utf-8')}")
+                decoded_folder = self.decode_folder_name(folder)
+                app_logger.debug(f"Folder: {decoded_folder}")
 
             app_logger.debug("=== Test Connection Successful ===")
             return True
@@ -116,7 +77,19 @@ class EmailHandler:
             app_logger.debug("Closing connection...")
             self.disconnect()
             app_logger.debug("=== Test Connection Completed ===")
-
+    
+    def disconnect(self):
+        """接続を切断"""
+        with self._lock:
+            if self.connection:
+                try:
+                    self.connection.close()
+                    self.connection.logout()
+                except:
+                    pass
+                finally:
+                    self.connection = None
+                    app_logger.debug("Connection closed and logged out")
 
     def encode_folder_name(self, folder):
         """フォルダー名をUTF-7でエンコードする"""
@@ -272,7 +245,7 @@ class EmailHandler:
                                         ).first()
 
                                         if existing_email:
-    ###                                            app_logger.debug(f"Skipping existing email: {parsed_msg['subject']}")
+###                                            app_logger.debug(f"Skipping existing email: {parsed_msg['subject']}")
                                             continue
 
                                         # メールの送受信フラグを設定
@@ -310,7 +283,6 @@ class EmailHandler:
 
         app_logger.debug(f"Total new emails synchronized: {len(new_emails)}")
         return new_emails
-
 
     def get_conversation(self, contact_email, search_query=None):
         """特定の連絡先とのメール会話を取得する"""
