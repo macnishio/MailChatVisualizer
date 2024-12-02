@@ -1,14 +1,14 @@
 import imaplib
 import email
 from email.header import decode_header
-from datetime import datetime, timedelta  # datetime.nowを使用するために修正
+from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 import re
 import traceback
 import threading
 import time
 import logging
-from models import db, EmailMessage  # EmailMessageもインポート
+from models import db, EmailMessage
 
 # email_handler.py でもロガーを取得
 app_logger = logging.getLogger('mailchat')
@@ -16,10 +16,12 @@ app_logger = logging.getLogger('mailchat')
 # Connection pool for IMAP connections
 _connection_pool = {}
 _pool_lock = threading.Lock()
-MAX_CONNECTIONS = 5
-CONNECTION_TIMEOUT = 30  # seconds
-MAX_RETRIES = 3
-RETRY_DELAY = 2  # seconds
+MAX_CONNECTIONS = 3  # 同時接続数を減らして安定性を向上
+CONNECTION_TIMEOUT = 60  # タイムアウトを60秒に延長
+MAX_RETRIES = 5  # リトライ回数を増やす
+RETRY_DELAY = 5  # リトライ間隔を5秒に延長
+BATCH_SIZE = 20  # 一度に処理するメッセージ数
+RECONNECT_INTERVAL = 300  # 5分ごとに再接続
 
 class EmailHandler:
     def __init__(self, email_address=None, password=None, imap_server=None):
@@ -30,9 +32,10 @@ class EmailHandler:
         self.connection_key = f"{email_address}:{imap_server}"
         self._lock = threading.Lock()
         self.last_activity = None
+        self.current_folder = None
 
     def connect(self):
-        """IMAPサーバーに接続（コネクションプール対応）"""
+        """IMAPサーバーに接続（コネクションプール対応・最適化版）"""
         for retry in range(MAX_RETRIES):
             try:
                 with _pool_lock:
@@ -41,87 +44,187 @@ class EmailHandler:
                     for key in list(_connection_pool.keys()):
                         conn_info = _connection_pool[key]
                         if current_time - conn_info['last_activity'] > CONNECTION_TIMEOUT:
-                            conn_info['connection'].logout()
+                            try:
+                                conn_info['connection'].logout()
+                            except:
+                                pass
                             del _connection_pool[key]
+                            app_logger.debug(f"Removed expired connection: {key}")
 
                     # 既存の接続を再利用
                     if self.connection_key in _connection_pool:
                         conn_info = _connection_pool[self.connection_key]
                         try:
-                            conn_info['connection'].noop()
-                            self.connection = conn_info['connection']
-                            conn_info['last_activity'] = time.time()
-                            app_logger.debug("Reusing existing connection")
-                            return
-                        except:
+                            # NOOPコマンドで接続状態を確認
+                            status, _ = conn_info['connection'].noop()
+                            if status == 'OK':
+                                self.connection = conn_info['connection']
+                                conn_info['last_activity'] = time.time()
+                                app_logger.debug("Reusing existing connection")
+                                return True
+                        except Exception as e:
+                            app_logger.warning(f"Connection reuse failed: {str(e)}")
+                            try:
+                                conn_info['connection'].logout()
+                            except:
+                                pass
                             del _connection_pool[self.connection_key]
 
                     # プールが最大数に達している場合、最も古い接続を切断
                     if len(_connection_pool) >= MAX_CONNECTIONS:
                         oldest_key = min(_connection_pool.keys(),
                                        key=lambda k: _connection_pool[k]['last_activity'])
-                        _connection_pool[oldest_key]['connection'].logout()
+                        try:
+                            _connection_pool[oldest_key]['connection'].logout()
+                        except:
+                            pass
                         del _connection_pool[oldest_key]
+                        app_logger.debug("Removed oldest connection from pool")
 
-                    # 新規接続を作成
-                    app_logger.debug(f"Connecting to {self.imap_server}...")
+                    # 新規接続を作成（タイムアウト処理改善）
+                    app_logger.debug(f"Creating new connection to {self.imap_server}...")
                     self.connection = imaplib.IMAP4_SSL(self.imap_server)
                     self.connection.socket().settimeout(CONNECTION_TIMEOUT)
-                    app_logger.debug("IMAP4_SSL connection established")
 
+                    # ログイン試行
                     app_logger.debug("Attempting login...")
-                    self.connection.login(self.email_address, self.password)
+                    status, _ = self.connection.login(self.email_address, self.password)
+                    if status != 'OK':
+                        raise Exception("Login failed")
                     app_logger.debug("Login successful")
 
                     # プールに追加
                     _connection_pool[self.connection_key] = {
                         'connection': self.connection,
-                        'last_activity': time.time()
+                        'last_activity': time.time(),
+                        'created_at': time.time()
                     }
-                    return
+                    return True
 
-            except imaplib.IMAP4.error as e:
-                if "Too many simultaneous connections" in str(e) and retry < MAX_RETRIES - 1:
-                    app_logger.warning(f"Too many connections, retrying in {RETRY_DELAY} seconds...")
-                    time.sleep(RETRY_DELAY)
-                    continue
-                app_logger.error(f"IMAP connection error: {str(e)}")
-                raise
             except Exception as e:
-                app_logger.error(f"Connection error: {str(e)}")
-                self.disconnect()
-                raise
+                app_logger.error(f"Connection attempt {retry + 1} failed: {str(e)}")
+                if retry < MAX_RETRIES - 1:
+                    time.sleep(RETRY_DELAY * (retry + 1))  # 指数バックオフ
+                else:
+                    raise
 
-    def test_connection(self):
-        """IMAPサーバーへの接続をテストする"""
-        app_logger.debug(f"=== Test Connection Started ===")
-        app_logger.debug(f"Server: {self.imap_server}")
-        app_logger.debug(f"Email: {self.email_address}")
-
+    def select_folder(self, folder_name):
+        """フォルダを選択し、接続状態を確認する"""
         try:
-            app_logger.debug("Attempting IMAP connection...")
-            self.connect()  # 修正した connect メソッドを使用
-            app_logger.debug("IMAP connection successful")
+            if not self.connection:
+                if not self.connect():
+                    return False
 
-            app_logger.debug("Listing folders...")
-            _, folders = self.connection.list()
+            if isinstance(folder_name, bytes):
+                folder_name = folder_name.decode('utf-8')
 
-            app_logger.debug("Available folders:")
-            for folder in folders:
-                decoded_folder = self.decode_folder_name(folder)
-                app_logger.debug(f"Folder: {decoded_folder}")
+            # 現在のフォルダと同じ場合はスキップ
+            if self.current_folder == folder_name:
+                return True
 
-            app_logger.debug("=== Test Connection Successful ===")
-            return True
+            # フォルダ名をエンコード
+            encoded_folder = folder_name.encode('utf-7').decode('ascii')
+            status, _ = self.connection.select(encoded_folder, readonly=True)
+            
+            if status == 'OK':
+                self.current_folder = folder_name
+                app_logger.debug(f"Selected folder: {folder_name}")
+                return True
+            else:
+                app_logger.error(f"Failed to select folder: {folder_name}")
+                return False
 
         except Exception as e:
-            app_logger.error(f"Connection test failed: {str(e)}", exc_info=True)
+            app_logger.error(f"Error selecting folder {folder_name}: {str(e)}")
+            self.disconnect()  # 接続をリセット
             return False
+
+    def check_new_emails(self):
+        """新着メールを確認し、パースして返す（最適化版）"""
+        new_emails = []
+        last_reconnect = time.time()
+        connection_error_count = 0
+        
+        try:
+            if not self.connect():
+                raise Exception("Failed to establish initial connection")
+
+            # INBOXと送信済みフォルダーの両方をチェック
+            folders_to_check = ['INBOX']
+            sent_folder = self.get_gmail_folders()
+            if sent_folder:
+                folders_to_check.append(sent_folder)
+                app_logger.debug(f"Added sent folder to check: {sent_folder}")
+
+            for folder in folders_to_check:
+                try:
+                    if not self.select_folder(folder):
+                        app_logger.error(f"Failed to select folder: {folder}")
+                        continue
+
+                    # 過去30日分のメールを取得
+                    date_since = (datetime.now() - timedelta(days=30)).strftime("%d-%b-%Y")
+                    search_cmd = f'(SINCE "{date_since}")'
+                    status, messages = self.connection.search(None, search_cmd)
+
+                    if status != 'OK':
+                        app_logger.error(f"Search failed in folder {folder}")
+                        continue
+
+                    message_nums = messages[0].split()
+                    total_messages = len(message_nums)
+                    app_logger.debug(f"Found {total_messages} messages in {folder}")
+
+                    # バッチ処理でメッセージを取得
+                    for i in range(0, total_messages, BATCH_SIZE):
+                        batch = message_nums[i:i + BATCH_SIZE]
+                        
+                        for num in batch:
+                            try:
+                                # 接続状態を確認し、必要に応じて再接続
+                                current_time = time.time()
+                                if current_time - last_reconnect > RECONNECT_INTERVAL:
+                                    app_logger.debug("Refreshing connection...")
+                                    self.disconnect()
+                                    if not self.connect() or not self.select_folder(folder):
+                                        raise Exception("Failed to refresh connection")
+                                    last_reconnect = current_time
+
+                                # メッセージを取得
+                                status, msg_data = self.connection.fetch(num, '(RFC822)')
+                                if status != 'OK' or not msg_data or not msg_data[0]:
+                                    continue
+
+                                email_body = msg_data[0][1]
+                                parsed_msg = self.parse_email_message(email_body)
+                                
+                                if parsed_msg and parsed_msg['message_id']:
+                                    parsed_msg['folder'] = folder
+                                    parsed_msg['is_sent'] = folder == sent_folder
+                                    new_emails.append(parsed_msg)
+
+                            except Exception as e:
+                                app_logger.error(f"Error processing message {num}: {str(e)}")
+                                connection_error_count += 1
+                                if connection_error_count > 5:
+                                    raise Exception("Too many connection errors")
+                                continue
+
+                        # バッチ処理後の短い待機
+                        time.sleep(0.1)
+
+                except Exception as e:
+                    app_logger.error(f"Error processing folder {folder}: {str(e)}")
+                    continue
+
+        except Exception as e:
+            app_logger.error(f"Email sync error: {str(e)}")
         finally:
-            app_logger.debug("Closing connection...")
             self.disconnect()
-            app_logger.debug("=== Test Connection Completed ===")
-    
+
+        app_logger.debug(f"Total new emails synchronized: {len(new_emails)}")
+        return new_emails
+
     def disconnect(self):
         """接続を切断（プール対応）"""
         with _pool_lock:
@@ -213,126 +316,36 @@ class EmailHandler:
             # 接続は保持したままにする（プーリング対応）
             pass
 
-    def check_new_emails(self):
-        """新着メールを確認し、パースして返す"""
-        new_emails = []
+    def test_connection(self):
+        """IMAPサーバーへの接続をテストする"""
+        app_logger.debug(f"=== Test Connection Started ===")
+        app_logger.debug(f"Server: {self.imap_server}")
+        app_logger.debug(f"Email: {self.email_address}")
+
         try:
-            self.connect()
-            app_logger.debug(f"Connected to {self.imap_server}")
+            app_logger.debug("Attempting IMAP connection...")
+            self.connect()  # 修正した connect メソッドを使用
+            app_logger.debug("IMAP connection successful")
 
-            # INBOXと送信済みフォルダーの両方をチェック
-            folders_to_check = ['INBOX']
-            sent_folder = None  # 送信済みフォルダーを保存する変数を追加
+            app_logger.debug("Listing folders...")
+            _, folders = self.connection.list()
 
-            # Gmail特有の送信済みフォルダーを取得
-            if not self.connection:
-                app_logger.debug("Attempting to connect to the server...")
-                self.connect()  # Attempt to establish a connection
+            app_logger.debug("Available folders:")
+            for folder in folders:
+                decoded_folder = self.decode_folder_name(folder)
+                app_logger.debug(f"Folder: {decoded_folder}")
 
-            if not self.connection:
-                app_logger.error("Failed to establish a connection before listing folders.")
-                return []  # Return early if the connection is not established
-
-            status, folder_list = self.connection.list()
-
-            if status != "OK":
-                app_logger.error(f"Failed to retrieve folder list: {status}")
-                return new_emails
-
-            # すべてのフォルダー情報をログに出力
-            app_logger.debug("Retrieved folder list:")
-            for folder_data in folder_list:
-                app_logger.debug(f"Folder data: {folder_data.decode('utf-8')}")
-
-            # Gmailの送信済みフォルダーを検索 (\Sent 属性で判定)
-            for folder_data in folder_list:
-                folder_info = folder_data.decode('utf-8')
-                app_logger.debug(f"Processing folder info: {folder_info}")
-
-                # フォルダー属性が「\Sent」を含む場合、そのフォルダーを送信済みフォルダーと見なす
-                if r'\Sent' in folder_info:
-                    sent_match = re.search(r'"([^"]+)"$', folder_info)
-                    if sent_match:
-                        sent_folder = sent_match.group(1)  # 送信済みフォルダー名を取得
-                        folders_to_check.append(sent_folder)
-                        app_logger.debug(f"Found sent folder: {sent_folder}")
-                        break
-
-            if not sent_folder:
-                app_logger.warning("No Gmail sent folder found. Please check your folder settings.")
-
-            app_logger.debug(f"Folders to be checked: {folders_to_check}")
-
-            # 各フォルダをチェックして新着メールを取得
-            for folder in folders_to_check:
-                try:
-                    app_logger.debug(f"Processing folder: {folder}")
-                    encoded_folder = folder.encode('utf-7').decode('ascii')
-                    self.connection.select(encoded_folder, readonly=True)
-
-                    # 過去30日分のメールを取得
-                    date_since = (datetime.now() - timedelta(days=365)).strftime("%d-%b-%Y")
-                    search_cmd = f'(SINCE "{date_since}")'
-                    app_logger.debug(f"Search command: {search_cmd}")
-
-                    _, messages = self.connection.search(None, search_cmd)
-                    message_nums = messages[0].split()
-                    app_logger.debug(f"Found {len(message_nums)} messages in {folder}")
-
-                    for num in message_nums:
-                        try:
-                            _, msg_data = self.connection.fetch(num, '(RFC822)')
-                            if msg_data and len(msg_data) > 0 and msg_data[0] is not None:
-                                email_body = msg_data[0][1]
-                                parsed_msg = self.parse_email_message(email_body)
-
-                                if parsed_msg and parsed_msg['message_id']:
-                                    with db.session.begin():
-                                        # メッセージIDで重複チェック
-                                        existing_email = EmailMessage.query.filter_by(
-                                            message_id=parsed_msg['message_id']
-                                        ).first()
-
-                                        if existing_email:
-###                                            app_logger.debug(f"Skipping existing email: {parsed_msg['subject']}")
-                                            continue
-
-                                        # メールの送受信フラグを設定
-                                        is_sent = folder == sent_folder if sent_folder else False
-
-                                        # 新規メールを保存
-                                        new_email = EmailMessage(
-                                            message_id=parsed_msg['message_id'],
-                                            from_address=parsed_msg['from'],
-                                            to_address=parsed_msg['to'],
-                                            subject=parsed_msg['subject'],
-                                            body=parsed_msg['body'],
-                                            date=parsed_msg['date'],
-                                            is_sent=is_sent,
-                                            folder=folder
-                                        )
-
-                                        db.session.add(new_email)
-                                        app_logger.debug(f"Added new email: {parsed_msg['subject']} ({folder})")
-                                        new_emails.append(parsed_msg)
-                            else:
-                                app_logger.error(f"Received invalid message data for message number: {num}")                            
-                        except Exception as e:
-                            app_logger.error(f"Error processing message in {folder}: {str(e)}")
-                            continue
-
-                except Exception as e:
-                    app_logger.error(f"Error processing folder {folder}: {str(e)}")
-                    continue
+            app_logger.debug("=== Test Connection Successful ===")
+            return True
 
         except Exception as e:
-            app_logger.error(f"Email sync error: {str(e)}")
+            app_logger.error(f"Connection test failed: {str(e)}", exc_info=True)
+            return False
         finally:
+            app_logger.debug("Closing connection...")
             self.disconnect()
-
-        app_logger.debug(f"Total new emails synchronized: {len(new_emails)}")
-        return new_emails
-
+            app_logger.debug("=== Test Connection Completed ===")
+    
     def get_conversation(self, contact_email, search_query=None):
         """特定の連絡先とのメール会話を取得する"""
         messages = []
@@ -423,9 +436,14 @@ class EmailHandler:
                 result += str(part)
         return result
 
-    def get_gmail_folders(self, connection):
+    def get_gmail_folders(self, connection=None):
         """Gmailフォルダー名を取得"""
         try:
+            if not connection:
+                if not self.connect():
+                    return None
+                connection = self.connection
+
             _, folders = connection.list(directory='""', pattern='%')
             sent_folder = None
             for folder_data in folders:
@@ -437,7 +455,7 @@ class EmailHandler:
                         break
             return sent_folder
         except Exception as e:
-            print(f"Gmailフォルダー取得エラー: {str(e)}")
+            app_logger.error(f"Gmailフォルダー取得エラー: {str(e)}")
             return None
 
     def parse_email_message(self, email_body):
@@ -484,6 +502,6 @@ class EmailHandler:
             }
 
         except Exception as e:
-            print(f"メッセージパースエラー: {str(e)}")
+            app_logger.error(f"メッセージパースエラー: {str(e)}")
             traceback.print_exc()
             return None
