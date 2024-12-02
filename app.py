@@ -208,9 +208,19 @@ def index():
 
     # Get distinct contact count from database
     try:
-        distinct_contacts = EmailMessage.query.with_entities(
-            EmailMessage.from_address
-        ).distinct().count()
+        # サブクエリを使用して最適化されたクエリを作成
+        contacts_subquery = db.session.query(
+            EmailMessage.from_address,
+            func.row_number().over(
+                order_by=EmailMessage.from_address
+            ).label('row_num')
+        ).distinct().subquery()
+
+        # 総件数を取得
+        distinct_contacts = db.session.query(func.count(contacts_subquery.c.from_address)).scalar()
+
+        # ページネーション用のクエリ
+        contacts_query = db.session.query(contacts_subquery.c.from_address).order_by(contacts_subquery.c.row_num)
     except Exception as e:
         app_logger.error(f"連絡先取得エラー: {str(e)}")
         distinct_contacts = 0
@@ -218,9 +228,6 @@ def index():
 
     # Get paginated contacts
     try:
-        contacts_query = EmailMessage.query.with_entities(
-            EmailMessage.from_address
-        ).distinct().order_by(EmailMessage.from_address)
         
         contacts_pagination = contacts_query.paginate(
             page=page,
@@ -330,6 +337,8 @@ def index():
         'index.html',
         messages=messages_dict,
         contacts=contacts,
+        contacts_total=distinct_contacts,
+        contacts_pagination=contacts_pagination,
         current_page=page,
         search_query=search_query
     )
