@@ -44,7 +44,7 @@
                                 </div>
                             {% else %}
                                 <div class="total-messages-count">
-                                    全{{ messages.total }}件のメッセージ
+                                    全{{ messages.message_list|length if messages and messages.message_list else 0 }}件のメッセージ
                                 </div>
                             {% endif %}
                         </div>

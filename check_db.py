@@ -6,7 +6,7 @@ app = create_app()
 with app.app_context():
     # 送信済みメールのみを取得（is_sent = True）
     result = db.session.execute(
-        text('SELECT id, message_id, subject, body, from_address, to_address, date FROM email_message WHERE is_sent = true ORDER BY date DESC LIMIT 5')
+        text('SELECT id, message_id, subject, body, from_address, to_address, date FROM email_message WHERE is_sent = true ORDER BY date DESC LIMIT 100')
     )
 
     print("\n=== 送信済みメール一覧 ===")
