@@ -1,0 +1,40 @@
+2024-12-02 18:17:28,698 - mailchat - ERROR - Connection test failed: The read operation timed out
+Traceback (most recent call last):
+  File "/home/runner/MailChatVisualizer/email_handler.py", line 107, in test_connection
+    _, folders = self.connection.list()
+                 ^^^^^^^^^^^^^^^^^^^^^^
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/imaplib.py", line 599, in list
+    typ, dat = self._simple_command(name, directory, pattern)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/imaplib.py", line 1230, in _simple_command
+    return self._command_complete(name, self._command(name, *args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/imaplib.py", line 1047, in _command_complete
+    typ, data = self._get_tagged_response(tag, expect_bye=logout)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/imaplib.py", line 1173, in _get_tagged_response
+    self._get_response()
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/imaplib.py", line 1075, in _get_response
+    resp = self._get_line()
+           ^^^^^^^^^^^^^^^^
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/imaplib.py", line 1183, in _get_line
+    line = self.readline()
+           ^^^^^^^^^^^^^^^
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/imaplib.py", line 323, in readline
+    line = self.file.readline(_MAXLINE + 1)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/socket.py", line 706, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/ssl.py", line 1314, in recv_into
+    return self.read(nbytes, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/ssl.py", line 1166, in read
+    return self._sslobj.read(len, buffer)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TimeoutError: The read operation timed out
+2024-12-02 18:17:28,701 - mailchat - DEBUG - Closing connection...
+2024-12-02 18:17:29,049 - mailchat - DEBUG - Connection removed from pool and logged out
+2024-12-02 18:17:29,049 - mailchat - DEBUG - === Test Connection Completed ===
+2024-12-02 18:17:29,049 - mailchat - DEBUG - Connection test result: False
+2024-12-02 18:17:29,049 - mailchat - ERROR - Connection test failed
