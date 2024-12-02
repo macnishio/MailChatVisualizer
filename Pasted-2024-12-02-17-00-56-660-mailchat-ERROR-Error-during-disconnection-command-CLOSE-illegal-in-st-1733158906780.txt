@@ -1,0 +1,31 @@
+2024-12-02 17:00:56,660 - mailchat - ERROR - Error during disconnection: command CLOSE illegal in state AUTH, only allowed in states SELECTED
+2024-12-02 17:00:56,660 - mailchat - DEBUG - Connection closed and logged out
+2024-12-02 17:00:56,660 - mailchat - DEBUG - === Test Connection Completed ===
+2024-12-02 17:00:56,660 - mailchat - DEBUG - Connection test result: True
+2024-12-02 17:00:56,660 - mailchat - DEBUG - Connecting to imap.gmail.com...
+2024-12-02 17:00:56,660 - mailchat - DEBUG - Started background email sync
+2024-12-02 17:00:56,673 - mailchat - ERROR - メッセージ取得エラー: A transaction is already begun on this Session.
+2024-12-02 17:00:56,673 - mailchat - ERROR - Traceback (most recent call last):
+  File "/home/runner/MailChatVisualizer/app.py", line 236, in index
+    with db.session.begin():
+         ^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/scoping.py", line 443, in begin
+    return self._proxied.begin(nested=nested)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 1939, in begin
+    raise sa_exc.InvalidRequestError(
+sqlalchemy.exc.InvalidRequestError: A transaction is already begun on this Session.
+
+2024-12-02 17:00:56,676 - werkzeug - INFO - 127.0.0.1 - - [02/Dec/2024 17:00:56] "GET /?contact=%09さくらのユーザ通信<sakura-info@sakura.ad.jp> HTTP/1.1" 200 -
+2024-12-02 17:00:56,946 - werkzeug - INFO - 127.0.0.1 - - [02/Dec/2024 17:00:56] "GET /static/css/style.css HTTP/1.1" 304 -
+2024-12-02 17:00:56,996 - werkzeug - INFO - 127.0.0.1 - - [02/Dec/2024 17:00:56] "GET /static/js/main.js HTTP/1.1" 304 -
+2024-12-02 17:00:57,372 - mailchat - DEBUG - IMAP4_SSL connection established
+2024-12-02 17:00:57,372 - mailchat - DEBUG - Background handler connected
+2024-12-02 17:00:57,632 - mailchat - DEBUG - Reusing existing connection
+2024-12-02 17:00:57,632 - mailchat - DEBUG - Connected to imap.gmail.com
+2024-12-02 17:00:57,632 - mailchat - ERROR - Email sync error: command LIST illegal in state NONAUTH, only allowed in states AUTH, SELECTED
+2024-12-02 17:00:57,632 - mailchat - ERROR - Error during disconnection: command CLOSE illegal in state NONAUTH, only allowed in states SELECTED
+2024-12-02 17:00:57,632 - mailchat - DEBUG - Connection closed and logged out
+2024-12-02 17:00:57,632 - mailchat - DEBUG - Total new emails synchronized: 0
+2024-12-02 17:00:57,632 - mailchat - DEBUG - Background sync completed: 0 new emails
+2024-12-02 17:00:57,632 - mailchat - DEBUG - Background handler disconnected
