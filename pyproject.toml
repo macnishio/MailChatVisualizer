@@ -12,4 +12,11 @@ dependencies = [
     "flask-migrate",
     "celery",
     "flask-caching>=2.3.0",
+    "unicodedata2>=15.1.0",
+    "python-dotenv",
+    "flask-cache",
+    "sqlalchemy>=2.0.36",
+    "imaplib2",
+    "email",
+    "python-dateutil",
 ]

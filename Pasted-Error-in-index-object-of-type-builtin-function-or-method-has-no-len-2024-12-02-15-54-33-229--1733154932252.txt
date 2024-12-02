@@ -1,0 +1,46 @@
+Error in index: object of type 'builtin_function_or_method' has no len()
+2024-12-02 15:54:33,229 - werkzeug - INFO - 127.0.0.1 - - [02/Dec/2024 15:54:33] "GET /?contact=Makoto+Nishio+<makoto@team240.net>&search=石塚 HTTP/1.1" 500 -
+Traceback (most recent call last):
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 1536, in __call__
+    return self.wsgi_app(environ, start_response)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 1514, in wsgi_app
+    response = self.handle_exception(e)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/app.py", line 114, in wrapper
+    result = func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/app.py", line 298, in index
+    return render_template(
+           ^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/templating.py", line 150, in render_template
+    return _render(app, template, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask/templating.py", line 131, in _render
+    rv = template.render(context)
+         ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/jinja2/environment.py", line 1304, in render
+    self.environment.handle_exception()
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/jinja2/environment.py", line 939, in handle_exception
+    raise rewrite_traceback_stack(source=source)
+  File "/home/runner/MailChatVisualizer/templates/index.html", line 1, in top-level template code
+    {% extends "base.html" %}
+  File "/home/runner/MailChatVisualizer/templates/base.html", line 42, in top-level template code
+    {% block content %}{% endblock %}
+  File "/home/runner/MailChatVisualizer/templates/index.html", line 43, in block 'content'
+    検索結果: {{ messages.items|length }}件
+TypeError: object of type 'builtin_function_or_method' has no len()
+2024-12-02 15:54:33,473 - werkzeug - INFO - 127.0.0.1 - - [02/Dec/2024 15:54:33] "GET /?__debugger__=yes&cmd=resource&f=style.css HTTP/1.1" 304 -
+2024-12-02 15:54:33,582 - werkzeug - INFO - 127.0.0.1 - - [02/Dec/2024 15:54:33] "GET /?__debugger__=yes&cmd=resource&f=debugger.js HTTP/1.1" 304 -

@@ -180,6 +180,15 @@ wheels = [
 ]
 
 [[package]]
+name = "flask-cache"
+version = "0.13.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "flask" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/91/c4/f71095437bd4b691c63f240e72a20c57e2c216085cbc271f79665885d3da/Flask-Cache-0.13.1.tar.gz", hash = "sha256:90126ca9bc063854ef8ee276e95d38b2b4ec8e45fd77d5751d37971ee27c7ef4", size = 45835 }
+
+[[package]]
 name = "flask-caching"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -432,6 +441,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-dotenv"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bc/57/e84d88dfe0aec03b7a2d4327012c1627ab5f03652216c63d49846d7a6c58/python-dotenv-1.0.1.tar.gz", hash = "sha256:e324ee90a023d808f1959c46bcbc04446a10ced277783dc6ee09987c37ec10ca", size = 39115 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/3e/b68c118422ec867fa7ab88444e1274aa40681c606d59ac27de5a5588f082/python_dotenv-1.0.1-py3-none-any.whl", hash = "sha256:f7b63ef50f1b690dddf550d03497b66d609393b40b564ed0d674909a68ebf16a", size = 19863 },
+]
+
+[[package]]
 name = "redis"
 version = "5.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -451,11 +469,15 @@ dependencies = [
     { name = "celery" },
     { name = "email-validator" },
     { name = "flask" },
+    { name = "flask-cache" },
     { name = "flask-caching" },
     { name = "flask-migrate" },
     { name = "flask-sqlalchemy" },
     { name = "psycopg2-binary" },
+    { name = "python-dotenv" },
     { name = "redis" },
+    { name = "sqlalchemy" },
+    { name = "unicodedata2" },
 ]
 
 [package.metadata]
@@ -463,11 +485,15 @@ requires-dist = [
     { name = "celery" },
     { name = "email-validator", specifier = ">=2.2.0" },
     { name = "flask", specifier = ">=3.1.0" },
+    { name = "flask-cache" },
     { name = "flask-caching", specifier = ">=2.3.0" },
     { name = "flask-migrate" },
     { name = "flask-sqlalchemy", specifier = ">=3.1.1" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
+    { name = "python-dotenv" },
     { name = "redis" },
+    { name = "sqlalchemy", specifier = ">=2.0.36" },
+    { name = "unicodedata2", specifier = ">=15.1.0" },
 ]
 
 [[package]]
@@ -532,6 +558,26 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e1/34/943888654477a574a86a98e9896bae89c7aa15078ec29f490fef2f1e5384/tzdata-2024.2.tar.gz", hash = "sha256:7d85cc416e9382e69095b7bdf4afd9e3880418a2413feec7069d533d6b4e31cc", size = 193282 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a6/ab/7e5f53c3b9d14972843a647d8d7a853969a58aecc7559cb3267302c94774/tzdata-2024.2-py2.py3-none-any.whl", hash = "sha256:a48093786cdcde33cad18c2555e8532f34422074448fbc874186f0abd79565cd", size = 346586 },
+]
+
+[[package]]
+name = "unicodedata2"
+version = "15.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/7f/35/12c70556a27ad6196135ddb37030d1a989234ef41f05995a166297651a49/unicodedata2-15.1.0.tar.gz", hash = "sha256:cb30f189ad66482f8529a45da71b2a8841e9bd2bb376cc2933003a4a55a07648", size = 592892 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e7/eb/422ed9321531d4544bfd70eac9323264135d1daf2acfa6963a307b4802bc/unicodedata2-15.1.0-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:a3f451fe97082ebc3814966d0868718f4e8fcb9c64782ecafdaf950f5a468b08", size = 857117 },
+    { url = "https://files.pythonhosted.org/packages/ca/1e/aa14c6a1e7b8d300c4eee329789af8dba95d537e763d8245a4d0e9f7a1d7/unicodedata2-15.1.0-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:9ad11b8260448a794b928a80018ef91a18f95d938e77431b338b81516f56dbb0", size = 427932 },
+    { url = "https://files.pythonhosted.org/packages/66/5e/89234dad6ae00379996e2f1c48081faeab679c830dd7018fc6341925c052/unicodedata2-15.1.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a2442a539d1e493486fdbbdf1d08c8f5d4abe51c9b77b7d39df319a96d30abe4", size = 471444 },
+    { url = "https://files.pythonhosted.org/packages/ab/fa/e97ba733e8ea1410ab7aa3818e71630cffe7ce459fbdc4e5506cb366aabf/unicodedata2-15.1.0-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:2af0d0eb7f9837ffcb3a440f51f25d80a2edb3c8eb03d61ba7eb3b5b938bf1cb", size = 478627 },
+    { url = "https://files.pythonhosted.org/packages/a5/c5/a9778371fcbe01446262cc459d0185d313544d41d5c08380725966ff573d/unicodedata2-15.1.0-cp311-cp311-win32.whl", hash = "sha256:fbb1ec96167c17e8618d7d534d97d4e13f3e0d5cadd07991bb5425c3a8d8da6a", size = 427210 },
+    { url = "https://files.pythonhosted.org/packages/06/b9/85175bdf8d0876a725f0ae32dcc5406f4390608d9a72d5ba7b82068f263a/unicodedata2-15.1.0-cp311-cp311-win_amd64.whl", hash = "sha256:da53b7203fac0a789808325d8fa06e47ca7367690e3dfb2d0ea3c9c44b659f52", size = 427790 },
+    { url = "https://files.pythonhosted.org/packages/ee/cb/2581b0f1a5d47d3863188d0c2a155d88656027ed96e97c22aa784d450c06/unicodedata2-15.1.0-cp312-cp312-macosx_10_9_universal2.whl", hash = "sha256:4c2100566694cfd35b12be4845723f3427833e1cc685a15d5895b705f9bd2086", size = 857243 },
+    { url = "https://files.pythonhosted.org/packages/6e/a4/1e5aad9cc3e23624884bae4cbb43f2cd127cfcb037b3dd80edcc6ef0d17c/unicodedata2-15.1.0-cp312-cp312-macosx_10_9_x86_64.whl", hash = "sha256:8de2240f942ce8a44871edcbc05f554e9d3d8a1f274c591835048dfde7b9afe2", size = 428026 },
+    { url = "https://files.pythonhosted.org/packages/c5/6c/17c5143b33ad44529219187c933d0d4d9de18981b034ac182c71b5318923/unicodedata2-15.1.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:bcdcd195484ba8ef19bef04ec14dcd8b1f8d6560fc517462ee0e010f5f545d75", size = 471953 },
+    { url = "https://files.pythonhosted.org/packages/c6/6b/a8058e144f18a183b4246c810870e23e903a53ae5ba09723d6ca68cc1bd7/unicodedata2-15.1.0-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:5b28ecf16d249bd4a9808db0ae0fdaa6f499d625e39d96800b8d2b424bf996b9", size = 478208 },
+    { url = "https://files.pythonhosted.org/packages/2c/e7/0667e11550b3e6c201d9eb728afc845667df9b1c0705fedfab7d4d12785d/unicodedata2-15.1.0-cp312-cp312-win32.whl", hash = "sha256:1062fe558eab6841063d2c36c104365e7e555740d8617acc32326b1a6c58fd96", size = 427203 },
+    { url = "https://files.pythonhosted.org/packages/cb/fc/5b8db7abfcd2d35ecc3b534ec6d1e458d98df023521ada8018559f71ad24/unicodedata2-15.1.0-cp312-cp312-win_amd64.whl", hash = "sha256:1790660996157d3b468e44a8f1b2f6061a95fa8316e09d673cf554fa5ef185f4", size = 427771 },
 ]
 
 [[package]]

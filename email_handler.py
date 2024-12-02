@@ -1,101 +1,359 @@
 import imaplib
 import email
 from email.header import decode_header
-import datetime
+from datetime import datetime, timedelta  # datetime.nowを使用するために修正
 from email.utils import parsedate_to_datetime
 import re
 import traceback
+import threading
+import time
+import logging
+from models import db, EmailMessage  # EmailMessageもインポート
+
+# email_handler.py でもロガーを取得
+app_logger = logging.getLogger('mailchat')
 
 class EmailHandler:
     def __init__(self, email_address=None, password=None, imap_server=None):
         self.email_address = email_address
         self.password = password
         self.imap_server = imap_server
-        # 初期化時にconnectを呼び出さない
+        self.connection = None
+        self.connection_key = f"{email_address}:{imap_server}"
+        self._lock = threading.Lock()  # インスタンスごとのロックを追加
 
     def connect(self):
-        """IMAPサーバーに接続し、認証を行う"""
+        """IMAPサーバーに接続"""
+        with self._lock:
+            try:
+                if self.connection:
+                    try:
+                        self.connection.noop()  # 接続が生きているか確認
+                        app_logger.debug("Reusing existing connection")
+                        return
+                    except:
+                        self.disconnect()
+
+                app_logger.debug(f"Connecting to {self.imap_server}...")
+                self.connection = imaplib.IMAP4_SSL(self.imap_server)
+                self.connection.socket().settimeout(30)
+                app_logger.debug("IMAP4_SSL connection established")
+
+                app_logger.debug("Attempting login...")
+                self.connection.login(self.email_address, self.password)
+                app_logger.debug("Login successful")
+
+            except Exception as e:
+                app_logger.error(f"Connection error: {str(e)}")
+                self.disconnect()
+                raise
+
+    def test_connection(self):
+        """IMAPサーバーへの接続をテストする"""
+        app_logger.debug(f"=== Test Connection Started ===")
+        app_logger.debug(f"Server: {self.imap_server}")
+        app_logger.debug(f"Email: {self.email_address}")
+
         try:
-            self.conn = imaplib.IMAP4_SSL(self.imap_server)
-            self.conn.login(self.email_address, self.password)
+            app_logger.debug("Attempting IMAP connection...")
+            self.connect()  # 修正した connect メソッドを使用
+            app_logger.debug("IMAP connection successful")
+
+            app_logger.debug("Listing folders...")
+            _, folders = self.connection.list()
+
+            app_logger.debug("Available folders:")
+            for folder in folders:
+                decoded_folder = self.decode_folder_name(folder)
+                app_logger.debug(f"Folder: {decoded_folder}")
+
+            app_logger.debug("=== Test Connection Successful ===")
+            return True
+
         except Exception as e:
-            raise ConnectionError(f"IMAP接続エラー: {str(e)}")
-
-    def check_connection(self):
-        """接続状態を確認し、必要に応じて再接続する"""
-        try:
-            status = self.conn.noop()[0]
-            if status != 'OK':
-                raise ConnectionError("接続が切断されています")
-        except Exception:
-            self.connect()
-
+            app_logger.error(f"Connection test failed: {str(e)}", exc_info=True)
+            return False
+        finally:
+            app_logger.debug("Closing connection...")
+            self.disconnect()
+            app_logger.debug("=== Test Connection Completed ===")
+    
     def disconnect(self):
-        """IMAPサーバーから切断する"""
+        """接続を切断"""
+        with self._lock:
+            if self.connection:
+                try:
+                    self.connection.close()
+                    self.connection.logout()
+                except:
+                    pass
+                finally:
+                    self.connection = None
+                    app_logger.debug("Connection closed and logged out")
+
+    def encode_folder_name(self, folder):
+        """フォルダー名をUTF-7でエンコードする"""
+        if isinstance(folder, bytes):
+            return folder
         try:
-            self.conn.close()
-            self.conn.logout()
-        except:
+            # IMAPフォルダー名をUTF-7でエンコード
+            return folder.encode('utf-7').decode('ascii')
+        except Exception as e:
+            app_logger.error(f"フォルダー名エンコードエラー: {str(e)}")
+            return folder
+
+    def decode_folder_name(self, folder):
+        """フォルダー名をデコードする"""
+        if isinstance(folder, bytes):
+            try:
+                folder = folder.decode('ascii', errors='replace')
+                # Modified UTF-7からデコードを試みる
+                return folder.encode('ascii').decode('utf-7')
+            except UnicodeDecodeError as e:
+                app_logger.error(f"フォルダー名デコードエラー: {str(e)}。フォルダー名をそのまま使用します: {folder}")
+                return folder  # エラーが発生したらそのままフォルダー名を使う
+        return folder
+
+    def get_contacts(self, search_query=None, limit=100):
+        """メールの連絡先一覧を取得する"""
+        contacts = set()
+        if not self.connection:
+            self.connect()
+            if not self.connection:  # Check again after attempting to connect
+                app_logger.error("Failed to establish a connection.")
+                return []  # Return early if the connection is not established
+
+        try:
+            self.connection.select('INBOX', readonly=True)
+            app_logger.debug("Selected INBOX folder")
+
+            search_cmd = '(SINCE "1-Dec-2023")'
+            app_logger.debug(f"Executing search command: {search_cmd}")
+            _, messages = self.connection.search(None, search_cmd)
+
+            if not messages[0]:
+                app_logger.debug("No messages found")
+                return []
+
+            message_nums = messages[0].split()[-limit:]
+            app_logger.debug(f"Processing {len(message_nums)} messages")
+
+            for num in message_nums:
+                try:
+                    _, msg_data = self.connection.fetch(num, '(BODY[HEADER.FIELDS (FROM)])')
+                    if msg_data and msg_data[0]:
+                        header_data = msg_data[0][1]
+                        if isinstance(header_data, bytes):
+                            msg = email.message_from_bytes(header_data)
+                            from_addr = self.decode_str(msg['from'])
+                            if from_addr:
+                                if not search_query or search_query.lower() in from_addr.lower():
+                                    contacts.add(from_addr)
+                except Exception as e:
+                    app_logger.error(f"ヘッダー処理エラー: {str(e)}")
+                    continue
+
+            app_logger.debug(f"Found {len(contacts)} unique contacts")
+            return sorted(list(contacts))
+
+        except Exception as e:
+            app_logger.error(f"連絡先取得エラー: {str(e)}")
+            self.disconnect()  # エラー時は接続を解放
+            raise
+        finally:
+            # 接続は保持したままにする（プーリング対応）
             pass
 
-    def parse_email_message(self, email_body):
-        """メールメッセージをパースしてディクショナリを返す"""
-        msg = email.message_from_bytes(email_body)
-        
-        # デバッグ情報
-        print(f"Message-ID: {msg['message-id']}")
-        print(f"Subject: {msg['subject']}")
-        print(f"From: {msg['from']}")
-        print(f"To: {msg['to']}")
-        
+    def check_new_emails(self):
+        """新着メールを確認し、パースして返す"""
+        new_emails = []
         try:
-            subject = self.decode_str(msg['subject'])
-            body = None
-            
-            if msg.is_multipart():
-                for part in msg.walk():
-                    if part.get_content_type() == "text/plain":
-                        payload = part.get_payload(decode=True)
-                        if payload:
-                            charset = part.get_content_charset() or 'utf-8'
-                            try:
-                                body = payload.decode(charset)
-                                break
-                            except UnicodeDecodeError:
-                                body = payload.decode('utf-8', errors='replace')
-                                break
-            else:
-                payload = msg.get_payload(decode=True)
-                if payload:
-                    charset = msg.get_content_charset() or 'utf-8'
-                    try:
-                        body = payload.decode(charset)
-                    except UnicodeDecodeError:
-                        body = payload.decode('utf-8', errors='replace')
-            
-            # 値が取得できない場合のデフォルト値設定
-            if not subject:
-                subject = "(件名なし)"
-            if not body:
-                body = "(本文なし)"
-                
-            print(f"Parsed subject: {subject}")
-            print(f"Body length: {len(body) if body else 0}")
-            
-            return {
-                'message_id': msg['message-id'],
-                'from': self.decode_str(msg['from']),
-                'to': self.decode_str(msg['to']),
-                'subject': subject,
-                'body': body,
-                'date': parsedate_to_datetime(msg['date']),
-                'is_sent': self.email_address and self.email_address in self.decode_str(msg['from']) if self.email_address else False
-            }
-            
+            self.connect()
+            app_logger.debug(f"Connected to {self.imap_server}")
+
+            # INBOXと送信済みフォルダーの両方をチェック
+            folders_to_check = ['INBOX']
+            sent_folder = None  # 送信済みフォルダーを保存する変数を追加
+
+            # Gmail特有の送信済みフォルダーを取得
+            if not self.connection:
+                app_logger.debug("Attempting to connect to the server...")
+                self.connect()  # Attempt to establish a connection
+
+            if not self.connection:
+                app_logger.error("Failed to establish a connection before listing folders.")
+                return []  # Return early if the connection is not established
+
+            status, folder_list = self.connection.list()
+
+            if status != "OK":
+                app_logger.error(f"Failed to retrieve folder list: {status}")
+                return new_emails
+
+            # すべてのフォルダー情報をログに出力
+            app_logger.debug("Retrieved folder list:")
+            for folder_data in folder_list:
+                app_logger.debug(f"Folder data: {folder_data.decode('utf-8')}")
+
+            # Gmailの送信済みフォルダーを検索 (\Sent 属性で判定)
+            for folder_data in folder_list:
+                folder_info = folder_data.decode('utf-8')
+                app_logger.debug(f"Processing folder info: {folder_info}")
+
+                # フォルダー属性が「\Sent」を含む場合、そのフォルダーを送信済みフォルダーと見なす
+                if r'\Sent' in folder_info:
+                    sent_match = re.search(r'"([^"]+)"$', folder_info)
+                    if sent_match:
+                        sent_folder = sent_match.group(1)  # 送信済みフォルダー名を取得
+                        folders_to_check.append(sent_folder)
+                        app_logger.debug(f"Found sent folder: {sent_folder}")
+                        break
+
+            if not sent_folder:
+                app_logger.warning("No Gmail sent folder found. Please check your folder settings.")
+
+            app_logger.debug(f"Folders to be checked: {folders_to_check}")
+
+            # 各フォルダをチェックして新着メールを取得
+            for folder in folders_to_check:
+                try:
+                    app_logger.debug(f"Processing folder: {folder}")
+                    encoded_folder = folder.encode('utf-7').decode('ascii')
+                    self.connection.select(encoded_folder, readonly=True)
+
+                    # 過去30日分のメールを取得
+                    date_since = (datetime.now() - timedelta(days=365)).strftime("%d-%b-%Y")
+                    search_cmd = f'(SINCE "{date_since}")'
+                    app_logger.debug(f"Search command: {search_cmd}")
+
+                    _, messages = self.connection.search(None, search_cmd)
+                    message_nums = messages[0].split()
+                    app_logger.debug(f"Found {len(message_nums)} messages in {folder}")
+
+                    for num in message_nums:
+                        try:
+                            _, msg_data = self.connection.fetch(num, '(RFC822)')
+                            if msg_data and len(msg_data) > 0 and msg_data[0] is not None:
+                                email_body = msg_data[0][1]
+                                parsed_msg = self.parse_email_message(email_body)
+
+                                if parsed_msg and parsed_msg['message_id']:
+                                    with db.session.begin():
+                                        # メッセージIDで重複チェック
+                                        existing_email = EmailMessage.query.filter_by(
+                                            message_id=parsed_msg['message_id']
+                                        ).first()
+
+                                        if existing_email:
+###                                            app_logger.debug(f"Skipping existing email: {parsed_msg['subject']}")
+                                            continue
+
+                                        # メールの送受信フラグを設定
+                                        is_sent = folder == sent_folder if sent_folder else False
+
+                                        # 新規メールを保存
+                                        new_email = EmailMessage(
+                                            message_id=parsed_msg['message_id'],
+                                            from_address=parsed_msg['from'],
+                                            to_address=parsed_msg['to'],
+                                            subject=parsed_msg['subject'],
+                                            body=parsed_msg['body'],
+                                            date=parsed_msg['date'],
+                                            is_sent=is_sent,
+                                            folder=folder
+                                        )
+
+                                        db.session.add(new_email)
+                                        app_logger.debug(f"Added new email: {parsed_msg['subject']} ({folder})")
+                                        new_emails.append(parsed_msg)
+                            else:
+                                app_logger.error(f"Received invalid message data for message number: {num}")                            
+                        except Exception as e:
+                            app_logger.error(f"Error processing message in {folder}: {str(e)}")
+                            continue
+
+                except Exception as e:
+                    app_logger.error(f"Error processing folder {folder}: {str(e)}")
+                    continue
+
         except Exception as e:
-            print(f"メッセージパースエラー: {str(e)}")
-            traceback.print_exc()
-            return None
+            app_logger.error(f"Email sync error: {str(e)}")
+        finally:
+            self.disconnect()
+
+        app_logger.debug(f"Total new emails synchronized: {len(new_emails)}")
+        return new_emails
+
+    def get_conversation(self, contact_email, search_query=None):
+        """特定の連絡先とのメール会話を取得する"""
+        messages = []
+        try:
+            self.connect()
+            if not self.connection:
+                raise Exception("IMAP接続に失敗しました。接続がNoneです。")
+
+            sent_folder = self.get_gmail_folders(self.connection)
+            folders = ['INBOX']  # フォルダーは str 型で扱う
+            if sent_folder:
+                folders.append(sent_folder)
+
+            for folder in folders:
+                try:
+                    # フォルダー名をUTF-7にエンコード（IMAPでの互換性のため）
+                    encoded_folder = self.encode_folder_name(folder).decode('utf-8')  # Ensure it's a str
+                    status, data = self.connection.select(encoded_folder)                    
+                    if status != 'OK':
+                        app_logger.error(f"フォルダー選択に失敗しました: {folder}")
+                        continue
+
+                    email_part = re.search(r'<(.+?)>', contact_email)
+                    if email_part:
+                        email = email_part.group(1)
+                        search_criteria = f'(OR FROM "{email}" TO "{email}")'
+
+                        if search_query:
+                            search_terms = search_query.split()
+                            for term in search_terms:
+                                search_criteria += f' (OR SUBJECT "{term}" BODY "{term}")'
+
+                        # メールを検索
+                        status, nums = self.connection.uid('SEARCH', None, search_criteria)
+                        if status != 'OK' or not nums:
+                            app_logger.error(f"メールの検索に失敗しました: {search_criteria}")
+                            continue
+
+                        if not nums[0]:
+                            app_logger.debug(f"No messages found for criteria: {search_criteria}")
+                            continue
+
+                        for num in nums[0].split():
+                            try:
+                                status, msg_data = self.connection.fetch(num, '(RFC822)')
+                                if status != 'OK' or not msg_data:
+                                    app_logger.error(f"メッセージの取得に失敗しました: UID {num}")
+                                    continue
+
+                                email_body = msg_data[0][1]
+                                if not email_body:
+                                    app_logger.error(f"メッセージのボディがNoneです: UID {num}")
+                                    continue
+
+                                parsed_msg = self.parse_email_message(email_body)
+                                if parsed_msg:
+                                    messages.append(parsed_msg)
+                            except Exception as e:
+                                app_logger.error(f"メッセージ処理エラー: UID {num} - {str(e)}")
+                                continue
+                except Exception as e:
+                    app_logger.error(f"フォルダー処理エラー ({folder}): {str(e)}")
+                    continue
+
+        except Exception as e:
+            app_logger.error(f"会話取得エラー: {str(e)}")
+        finally:
+            self.disconnect()
+
+        return sorted(messages, key=lambda x: x['date'])
 
     def decode_str(self, s):
         """文字列をデコードする"""
@@ -116,36 +374,10 @@ class EmailHandler:
                 result += str(part)
         return result
 
-    def encode_folder_name(self, folder):
-        """フォルダー名をUTF-7でエンコードする"""
-        if isinstance(folder, bytes):
-            return folder
-        try:
-            return folder.encode('utf-7')
-        except Exception as e:
-            print(f"フォルダー名エンコードエラー: {str(e)}")
-            return folder
-
-    def select_folder(self, folder):
-        """フォルダーを選択する"""
-        try:
-            if isinstance(folder, bytes):
-                encoded_folder = folder
-            else:
-                encoded_folder = self.encode_folder_name(folder)
-            
-            status, data = self.conn.select(encoded_folder, readonly=True)
-            if status != 'OK':
-                raise Exception(f"選択エラー: {data[0].decode('utf-8', errors='replace')}")
-            return True
-        except Exception as e:
-            print(f"フォルダー選択エラー ({folder}): {str(e)}")
-            return False
-
-    def get_gmail_folders(self):
+    def get_gmail_folders(self, connection):
         """Gmailフォルダー名を取得"""
         try:
-            _, folders = self.conn.list(directory='""', pattern='%')
+            _, folders = connection.list(directory='""', pattern='%')
             sent_folder = None
             for folder_data in folders:
                 folder_info = folder_data.decode('utf-8')
@@ -159,148 +391,50 @@ class EmailHandler:
             print(f"Gmailフォルダー取得エラー: {str(e)}")
             return None
 
-    def build_search_criteria(self, contact_email, search_query):
-        """検索条件を構築する"""
-        criteria = []
-        if contact_email:
-            email_part = re.search(r'<(.+?)>', contact_email)
-            if email_part:
-                email = email_part.group(1)
-                criteria.append(f'(OR FROM "{email}" TO "{email}")')
-        if search_query:
-            try:
-                # 検索クエリをUTF-8で処理
-                search_terms = search_query.split()
-                for term in search_terms:
-                    criteria.append(f'(OR (OR SUBJECT "{term}" BODY "{term}") TEXT "{term}")')
-            except Exception as e:
-                print(f"検索クエリエラー: {str(e)}")
-        return ' '.join(criteria) if criteria else 'ALL'
+    def parse_email_message(self, email_body):
+        """メールメッセージをパースしてディクショナリを返す"""
+        msg = email.message_from_bytes(email_body)
 
-    def get_contacts(self, search_query=None, limit=100):
-        """メールの連絡先一覧を取得する"""
-        contacts = set()
         try:
-            self.check_connection()
-            
-            # IMAPコマンドを最適化
-            search_cmd = '(SINCE "1-Jan-2024")'  # 最近のメールのみを対象
-            
-            # メールヘッダーのみを取得
-            self.conn.select('INBOX', readonly=True)
-            _, messages = self.conn.search(None, search_cmd)
-            
-            # 最新のメッセージから処理
-            message_nums = messages[0].split()[-limit:]
-            
-            # バッチ処理でヘッダー情報を取得
-            for i in range(0, len(message_nums), 10):  # 10件ずつ処理
-                batch = message_nums[i:i+10]
-                for num in batch:
-                    try:
-                        # ヘッダーのみを取得
-                        _, msg_data = self.conn.fetch(num, '(BODY[HEADER.FIELDS (FROM)])')
-                        if msg_data[0]:
-                            header_data = msg_data[0][1]
-                            msg = email.message_from_bytes(header_data)
-                            from_addr = self.decode_str(msg['from'])
-                            if from_addr:
-                                if not search_query or search_query.lower() in from_addr.lower():
-                                    contacts.add(from_addr)
-                    except Exception as e:
-                        print(f"ヘッダー処理エラー: {str(e)}")
-                        continue
-            
-            return sorted(list(contacts))
-            
-        except Exception as e:
-            print(f"連絡先取得エラー: {str(e)}")
-            self.check_connection()
-            return []
+            subject = self.decode_str(msg['subject'])
+            body = None
 
-    def get_conversation(self, contact_email, search_query=None):
-        """特定の連絡先とのメール会話を取得する"""
-        messages = []
-        try:
-            self.check_connection()
-            sent_folder = self.get_gmail_folders()
-            folders = [b'INBOX']
-            if sent_folder:
-                folders.append(sent_folder)
-            
-            for folder in folders:
-                if not self.select_folder(folder):
-                    continue
-                
-                try:
-                    # メールボックスを確実に選択
-                    self.conn.select(folder)
-                    
-                    # 検索条件を構築
-                    criteria = self.build_search_criteria(contact_email, search_query)
-                    search_cmd = f'CHARSET UTF-8 {criteria}' if criteria != 'ALL' else 'ALL'
-                    
-                    # 検索を実行
+            if msg.is_multipart():
+                for part in msg.walk():
+                    if part.get_content_type() == "text/plain":
+                        payload = part.get_payload(decode=True)
+                        if payload is not None:
+                            charset = part.get_content_charset() or 'utf-8'
+                            try:
+                                body = payload.decode(charset)
+                            except UnicodeDecodeError:
+                                body = payload.decode('utf-8', errors='replace')
+                                break
+            else:
+                payload = msg.get_payload(decode=True)
+                if payload:
+                    charset = msg.get_content_charset() or 'utf-8'
                     try:
-                        if search_query:
-                            # UTF-8でエンコードして検索
-                            search_query_encoded = search_query.encode('utf-8')
-                            _, nums = self.conn.uid('SEARCH', 'CHARSET', 'UTF-8',
-                                                  'OR', 'SUBJECT', search_query_encoded,
-                                                  'OR', 'BODY', search_query_encoded)
-                        else:
-                            # 特定の連絡先のメールのみを検索
-                            email_part = re.search(r'<(.+?)>', contact_email)
-                            if email_part:
-                                email = email_part.group(1)
-                                _, nums = self.conn.uid('SEARCH', 'OR',
-                                                      f'FROM "{email}"',
-                                                      f'TO "{email}"')
-                            else:
-                                _, nums = self.conn.uid('SEARCH', 'ALL')
-                    except imaplib.IMAP4.error as e:
-                        print(f"検索エラー: {str(e)}")
-                        # フォールバック: 基本的な検索を試みる
-                        _, nums = self.conn.uid('SEARCH', 'ALL')
-                    
-                    if not nums[0]:
-                        continue
-                        
-                    for num in nums[0].split():
-                        try:
-                            _, msg_data = self.conn.fetch(num, '(RFC822)')
-                            email_body = msg_data[0][1]
-                            msg = email.message_from_bytes(email_body)
-                            
-                            body = ""
-                            if msg.is_multipart():
-                                for part in msg.walk():
-                                    if part.get_content_type() == "text/plain":
-                                        payload = part.get_payload(decode=True)
-                                        if payload:
-                                            body = payload.decode('utf-8', errors='replace')
-                                            break
-                            else:
-                                payload = msg.get_payload(decode=True)
-                                if payload:
-                                    body = payload.decode('utf-8', errors='replace')
+                        body = payload.decode(charset)
+                    except UnicodeDecodeError:
+                        body = payload.decode('utf-8', errors='replace')
 
-                            date = parsedate_to_datetime(msg['date'])
-                            from_addr = self.decode_str(msg['from'])
-                            is_sent = self.email_address in from_addr
-                            
-                            messages.append({
-                                'body': body,
-                                'date': date,
-                                'is_sent': is_sent,
-                                'from': from_addr
-                            })
-                        except Exception as e:
-                            print(f"メッセージ処理エラー: {str(e)}")
-                except Exception as e:
-                    print(f"フォルダー処理エラー ({folder}): {str(e)}")
+            if not subject:
+                subject = "(件名なし)"
+            if not body:
+                body = "(本文なし)"
+
+            return {
+                'message_id': msg['message-id'],
+                'from': self.decode_str(msg['from']),
+                'to': self.decode_str(msg['to']),
+                'subject': subject,
+                'body': body,
+                'date': parsedate_to_datetime(msg['date']),
+                'is_sent': self.email_address and self.email_address in self.decode_str(msg['from']) if self.email_address else False
+            }
+
         except Exception as e:
-            print(f"会話取得エラー: {str(e)}")
-            self.check_connection()
-        
-        return sorted(messages, key=lambda x: x['date'])
+            print(f"メッセージパースエラー: {str(e)}")
+            traceback.print_exc()
+            return None
