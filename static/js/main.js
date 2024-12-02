@@ -7,9 +7,29 @@ document.addEventListener('DOMContentLoaded', function() {
         pageSizeSelect.addEventListener('change', function() {
             const pageSize = this.value;
             const currentUrl = new URL(window.location.href);
-            currentUrl.searchParams.set('per_page', pageSize);
-            currentUrl.searchParams.delete('page'); // ページを1に戻す
-            window.location.href = currentUrl.toString();
+            
+            // 現在のURLパラメータを保持
+            const contact = currentUrl.searchParams.get('contact');
+            const search = currentUrl.searchParams.get('search');
+            
+            // 新しいURLパラメータを設定
+            const newParams = new URLSearchParams();
+            if (contact) newParams.set('contact', contact);
+            if (search) newParams.set('search', search);
+            newParams.set('per_page', pageSize);
+            // ページを1に戻す（ページサイズ変更時）
+            
+            // 新しいURLを構築
+            const newUrl = new URL(window.location.origin + window.location.pathname);
+            newUrl.search = newParams.toString();
+            
+            // アニメーション効果を追加してページ遷移
+            document.body.style.opacity = '0.5';
+            document.body.style.transition = 'opacity 0.3s ease';
+            
+            setTimeout(() => {
+                window.location.href = newUrl.toString();
+            }, 300);
         });
     }
     
