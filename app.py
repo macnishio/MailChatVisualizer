@@ -213,19 +213,31 @@ def index():
 
     # Get distinct contact count from database
     try:
+        sort_by = request.args.get('sort_by', 'name_asc')
+        
         # サブクエリを使用して最適化されたクエリを作成
-        contacts_subquery = db.session.query(
+        base_query = db.session.query(
             EmailMessage.from_address,
-            func.row_number().over(
-                order_by=EmailMessage.from_address
-            ).label('row_num')
-        ).distinct().subquery()
+            func.max(EmailMessage.date).label('last_message_date')
+        ).group_by(EmailMessage.from_address)
+
+        # 並び替えの適用
+        if sort_by == 'name_desc':
+            base_query = base_query.order_by(EmailMessage.from_address.desc())
+        elif sort_by == 'date_desc':
+            base_query = base_query.order_by(func.max(EmailMessage.date).desc())
+        elif sort_by == 'date_asc':
+            base_query = base_query.order_by(func.max(EmailMessage.date).asc())
+        else:  # name_asc (デフォルト)
+            base_query = base_query.order_by(EmailMessage.from_address.asc())
+
+        contacts_subquery = base_query.subquery()
 
         # 総件数を取得
         distinct_contacts = db.session.query(func.count(contacts_subquery.c.from_address)).scalar()
 
         # ページネーション用のクエリ
-        contacts_query = db.session.query(contacts_subquery.c.from_address).order_by(contacts_subquery.c.row_num)
+        contacts_query = db.session.query(contacts_subquery.c.from_address)
     except Exception as e:
         app_logger.error(f"連絡先取得エラー: {str(e)}")
         distinct_contacts = 0
@@ -346,7 +358,8 @@ def index():
         contacts_pagination=contacts_pagination,
         current_page=page,
         search_query=search_query,
-        per_page=per_page
+        per_page=per_page,
+        sort_by=sort_by
     )
 
 

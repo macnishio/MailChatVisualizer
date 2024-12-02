@@ -1,23 +1,50 @@
 document.addEventListener('DOMContentLoaded', function() {
     const messagesContainer = document.querySelector('.messages-container');
     const pageSizeSelect = document.getElementById('pageSizeSelect');
+    const sortSelect = document.getElementById('sortSelect');
+    
+    // ページサイズと並び替えの変更を処理する関数
+    function updateUrlAndReload(params) {
+        const currentUrl = new URL(window.location.href);
+        const contact = currentUrl.searchParams.get('contact');
+        const search = currentUrl.searchParams.get('search');
+        
+        const newParams = new URLSearchParams();
+        if (contact) newParams.set('contact', contact);
+        if (search) newParams.set('search', search);
+        
+        // 渡されたパラメータを追加
+        Object.entries(params).forEach(([key, value]) => {
+            newParams.set(key, value);
+        });
+        
+        // アニメーション効果を追加してページ遷移
+        document.body.style.opacity = '0.5';
+        document.body.style.transition = 'opacity 0.3s ease';
+        
+        setTimeout(() => {
+            window.location.href = `${window.location.pathname}?${newParams.toString()}`;
+        }, 300);
+    }
     
     // ページサイズの変更を処理
     if (pageSizeSelect) {
         pageSizeSelect.addEventListener('change', function() {
-            const pageSize = this.value;
-            const currentUrl = new URL(window.location.href);
-            
-            // 現在のURLパラメータを保持
-            const contact = currentUrl.searchParams.get('contact');
-            const search = currentUrl.searchParams.get('search');
-            
-            // 新しいURLパラメータを設定
-            const newParams = new URLSearchParams();
-            if (contact) newParams.set('contact', contact);
-            if (search) newParams.set('search', search);
-            newParams.set('per_page', pageSize);
-            // ページを1に戻す（ページサイズ変更時）
+            updateUrlAndReload({
+                'per_page': this.value,
+                'page': 1 // ページサイズ変更時はページを1に戻す
+            });
+        });
+    }
+    
+    // 並び替えの変更を処理
+    if (sortSelect) {
+        sortSelect.addEventListener('change', function() {
+            updateUrlAndReload({
+                'sort_by': this.value,
+                'page': 1 // 並び替え変更時はページを1に戻す
+            });
+        });
             
             // 新しいURLを構築
             const newUrl = new URL(window.location.origin + window.location.pathname);
