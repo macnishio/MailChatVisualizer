@@ -45,13 +45,35 @@ class EmailHandler:
         self.current_folder = None
 
     def verify_connection_state(self, expected_states=None, allow_reconnect=True, force_folder=None):
-        """接続状態を検証し、必要に応じて状態遷移を処理する（改善版）"""
+        """接続状態を検証し、必要に応じて状態遷移を処理する（タイムアウト対応版）"""
         if not self.connection:
             if not allow_reconnect:
                 return False
             try:
-                if not self.connect():
+                # Set socket timeout for faster timeout detection
+                import socket
+                socket.setdefaulttimeout(CONNECTION_TIMEOUT)
+                
+                # Attempt reconnection with exponential backoff
+                for retry in range(MAX_RETRIES):
+                    try:
+                        if self.connect():
+                            break
+                        backoff_time = min(RETRY_DELAY * (2 ** retry), 30)  # Max 30 seconds
+                        app_logger.debug(f"Connection attempt {retry + 1} failed, waiting {backoff_time}s")
+                        time.sleep(backoff_time)
+                    except Exception as e:
+                        if 'timed out' in str(e).lower():
+                            app_logger.warning(f"Connection timed out (attempt {retry + 1})")
+                        else:
+                            app_logger.error(f"Reconnection error: {str(e)}")
+                        if retry == MAX_RETRIES - 1:
+                            return False
+                        continue
+                    
+                if not self.connection:
                     return False
+                    
             except Exception as e:
                 app_logger.error(f"Reconnection failed: {str(e)}")
                 return False
@@ -137,12 +159,17 @@ class EmailHandler:
             return False
 
     def connect(self):
-        """IMAPサーバーに接続（スロットリング対応・最適化版）"""
+        """IMAPサーバーに接続（タイムアウト・再接続対応版）"""
         last_error = None
         for retry in range(MAX_RETRIES):
             try:
-                if not _connection_semaphore.acquire(timeout=CONNECTION_TIMEOUT):
+                # Add timeout to semaphore acquisition
+                if not _connection_semaphore.acquire(timeout=min(CONNECTION_TIMEOUT, 10)):
                     raise Exception("接続制限に達しました")
+                
+                # Set specific timeout for socket operations
+                import socket
+                socket.setdefaulttimeout(CONNECTION_TIMEOUT)
                     
                 try:
                     with _pool_lock:
@@ -169,12 +196,21 @@ class EmailHandler:
                             time.sleep(min(wait_time, THROTTLE_BACKOFF))
                             continue
 
-                        # 既存の接続を再利用
+                        # 既存の接続を再利用（タイムアウト検出強化）
                         if self.connection_key in _connection_pool:
                             conn_info = _connection_pool[self.connection_key]
                             try:
-                                # 厳密な接続状態チェック
-                                status, response = conn_info['connection'].noop()
+                                # Set socket timeout for connection check
+                                conn_info['connection'].socket().settimeout(10)
+                                
+                                # 厳密な接続状態チェック with timeout handling
+                                try:
+                                    status, response = conn_info['connection'].noop()
+                                except Exception as e:
+                                    if 'timed out' in str(e).lower():
+                                        app_logger.warning("Connection timed out during NOOP check")
+                                        raise Exception("Connection timeout detected")
+                                    raise
                                 
                                 # スロットリング検出
                                 if isinstance(response, list) and response and b'THROTTLED' in response[0]:
@@ -241,10 +277,17 @@ class EmailHandler:
                             del _connection_pool[oldest_key]
                             app_logger.debug("Removed oldest connection from pool")
 
-                        # 新規接続を作成（タイムアウト処理改善）
+                        # 新規接続を作成（タイムアウト処理・再接続ロジック改善）
                         app_logger.debug(f"Creating new connection to {self.imap_server}...")
-                        self.connection = imaplib.IMAP4_SSL(self.imap_server)
-                        self.connection.socket().settimeout(CONNECTION_TIMEOUT)
+                        try:
+                            self.connection = imaplib.IMAP4_SSL(self.imap_server)
+                            self.connection.socket().settimeout(CONNECTION_TIMEOUT)
+                        except Exception as e:
+                            if 'timed out' in str(e).lower():
+                                app_logger.warning("Connection timed out during creation")
+                                if retry < MAX_RETRIES - 1:
+                                    continue
+                            raise
 
                         # ログイン試行
                         app_logger.debug("Attempting login...")
