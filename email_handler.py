@@ -44,6 +44,26 @@ class EmailHandler:
         self.last_activity = None
         self.current_folder = None
 
+    def verify_connection_state(self, expected_states=None):
+        """接続状態を検証する"""
+        if not self.connection:
+            return False
+            
+        try:
+            current_state = self.connection.state
+            app_logger.debug(f"Current connection state: {current_state}")
+            
+            if expected_states and current_state not in expected_states:
+                app_logger.warning(f"Invalid connection state: {current_state}, expected one of: {expected_states}")
+                return False
+                
+            # NOOPで接続の生存確認
+            status, _ = self.connection.noop()
+            return status == 'OK'
+        except Exception as e:
+            app_logger.error(f"Connection state verification failed: {str(e)}")
+            return False
+
     def connect(self):
         """IMAPサーバーに接続（スロットリング対応・最適化版）"""
         last_error = None
@@ -178,7 +198,10 @@ class EmailHandler:
         
         while retry_count < MAX_RETRIES:
             try:
-                if not self.connection:
+                # 接続状態の確認
+                if not self.verify_connection_state(['AUTH', 'SELECTED']):
+                    app_logger.debug("Connection state invalid, attempting reconnect")
+                    self.disconnect()
                     if not self.connect():
                         return False
 
@@ -450,6 +473,10 @@ class EmailHandler:
                     app_logger.debug(f"Connection attempt {retry + 1}/{MAX_RETRIES}")
                     if not self.connect():
                         raise Exception("Failed to establish connection")
+                        
+                    # 接続状態の検証
+                    if not self.verify_connection_state(['AUTH']):
+                        raise Exception("Connection not in AUTH state after connect")
                     app_logger.debug("IMAP connection successful")
 
                     # フォルダーリスト取得時のタイムアウト処理
