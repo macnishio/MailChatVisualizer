@@ -1,0 +1,21 @@
+24-12-03 20:22:44,799 - mailchat - DEBUG - === Test Connection Started ===
+2024-12-03 20:22:44,799 - mailchat - DEBUG - Server: imap.gmail.com
+2024-12-03 20:22:44,799 - mailchat - DEBUG - Email: makoto@team240.net
+2024-12-03 20:22:44,799 - mailchat - DEBUG - Connection attempt 1/5
+2024-12-03 20:22:45,360 - mailchat - DEBUG - Reusing existing connection
+2024-12-03 20:22:45,360 - mailchat - DEBUG - IMAP connection successful
+2024-12-03 20:22:45,360 - mailchat - DEBUG - Listing folders...
+2024-12-03 20:22:45,443 - mailchat - ERROR - Error processing message b'84870': FETCH command error: BAD [b'FETCH not allowed now.']
+2024-12-03 20:22:45,443 - mailchat - ERROR - Error processing message b'84871': command FETCH illegal in state AUTH, only allowed in states SELECTED
+2024-12-03 20:22:45,443 - mailchat - ERROR - Error processing message b'84872': command FETCH illegal in state AUTH, only allowed in states SELECTED
+2024-12-03 20:22:45,443 - mailchat - ERROR - Error processing message b'84873': command FETCH illegal in state AUTH, only allowed in states SELECTED
+2024-12-03 20:22:45,443 - mailchat - ERROR - Error processing message b'84874': command FETCH illegal in state AUTH, only allowed in states SELECTED
+2024-12-03 20:22:45,443 - mailchat - ERROR - Error processing message b'84875': command FETCH illegal in state AUTH, only allowed in states SELECTED
+2024-12-03 20:22:45,443 - mailchat - ERROR - Error processing folder INBOX: Too many connection errors
+2024-12-03 20:22:45,443 - mailchat - DEBUG - Connection removed from pool and logged out
+2024-12-03 20:22:45,443 - mailchat - DEBUG - Total new emails synchronized: 1
+2024-12-03 20:22:45,443 - mailchat - DEBUG - Background sync completed: 1 new emails
+2024-12-03 20:22:45,646 - mailchat - DEBUG - Available folders:
+2024-12-03 20:22:45,646 - mailchat - DEBUG - Folder: (\HasNoChildren) "/" "INBOX"
+2024-12-03 20:22:45,646 - mailchat - DEBUG - Folder: (\HasNoChildren) "/" "Notes"
+2024-12-03 20:22:45,646 - mailchat - DEBUG - Folder: (\HasNoChildren) "/" "ZOHO Mail &U9d
