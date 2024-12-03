@@ -44,8 +44,8 @@ class EmailHandler:
         self.last_activity = None
         self.current_folder = None
 
-    def verify_connection_state(self, expected_states=None, allow_reconnect=True):
-        """接続状態を検証し、必要に応じて状態遷移を処理する"""
+    def verify_connection_state(self, expected_states=None, allow_reconnect=True, force_folder=None):
+        """接続状態を検証し、必要に応じて状態遷移を処理する（改善版）"""
         if not self.connection:
             if not allow_reconnect:
                 return False
@@ -60,51 +60,80 @@ class EmailHandler:
             current_state = self.connection.state
             app_logger.debug(f"Current connection state: {current_state}")
             
+            # LOGOUT状態のチェックと処理
+            if current_state == 'LOGOUT':
+                app_logger.warning("Connection in LOGOUT state, attempting recovery")
+                if not allow_reconnect:
+                    return False
+                self.disconnect()
+                if not self.connect():
+                    return False
+                current_state = self.connection.state
+            
             if expected_states:
                 if current_state not in expected_states:
                     app_logger.warning(f"Invalid state: {current_state}, expected: {expected_states}")
                     
-                    # 状態遷移の試行
-                    if 'SELECTED' in expected_states and current_state == 'AUTH':
-                        if self.current_folder:
-                            if not self.select_folder(self.current_folder):
-                                raise Exception("Failed to transition to SELECTED state")
-                            return True
-                    elif 'AUTH' in expected_states and current_state == 'NONAUTH':
-                        try:
+                    # 状態遷移の体系的な処理
+                    try:
+                        # NONAUTH → AUTH
+                        if current_state == 'NONAUTH' and 'AUTH' in expected_states:
                             status, _ = self.connection.login(self.email_address, self.password)
                             if status != 'OK':
-                                raise Exception("Login failed during state transition")
-                            return True
-                        except Exception as e:
-                            app_logger.error(f"Login failed: {str(e)}")
-                            return False
-                    
-                    # 状態遷移できない場合は再接続を試みる
-                    if allow_reconnect:
-                        app_logger.debug("Attempting reconnection due to invalid state")
-                        self.disconnect()
-                        return self.verify_connection_state(expected_states, False)
-                    return False
+                                raise Exception("Authentication failed")
+                            current_state = 'AUTH'
+                            app_logger.debug("Successfully transitioned to AUTH state")
+                        
+                        # AUTH → SELECTED
+                        if current_state == 'AUTH' and 'SELECTED' in expected_states:
+                            folder_to_select = force_folder or self.current_folder
+                            if folder_to_select:
+                                if not self.select_folder(folder_to_select):
+                                    raise Exception("Failed to transition to SELECTED state")
+                                current_state = 'SELECTED'
+                                app_logger.debug(f"Successfully transitioned to SELECTED state with folder: {folder_to_select}")
+                            else:
+                                app_logger.warning("No folder specified for SELECTED state transition")
+                                return False
+                        
+                        # 状態遷移後の検証
+                        if current_state not in expected_states:
+                            raise Exception(f"Failed to achieve expected state: {expected_states}")
+                            
+                    except Exception as e:
+                        app_logger.error(f"State transition failed: {str(e)}")
+                        if allow_reconnect:
+                            app_logger.debug("Attempting reconnection after failed state transition")
+                            self.disconnect()
+                            return self.verify_connection_state(expected_states, False, force_folder)
+                        return False
             
-            # 接続の生存確認
+            # 接続の生存確認と状態保持の検証
             try:
-                status, _ = self.connection.noop()
+                status, response = self.connection.noop()
                 if status != 'OK':
                     raise Exception("NOOP check failed")
+                    
+                # レスポンスの詳細な解析
+                if isinstance(response, list) and response:
+                    response_str = str(response[0])
+                    if 'BYE' in response_str or 'LOGOUT' in response_str:
+                        raise Exception("Connection received BYE/LOGOUT response")
+                
                 return True
+                
             except Exception as e:
                 app_logger.error(f"Connection check failed: {str(e)}")
                 if allow_reconnect:
-                    app_logger.debug("Attempting reconnection after failed NOOP")
+                    app_logger.debug("Attempting reconnection after failed connection check")
                     self.disconnect()
-                    return self.verify_connection_state(expected_states, False)
+                    return self.verify_connection_state(expected_states, False, force_folder)
                 return False
                 
         except Exception as e:
             app_logger.error(f"Connection state verification failed: {str(e)}")
             if allow_reconnect:
-                return self.verify_connection_state(expected_states, False)
+                return self.verify_connection_state(expected_states, False, force_folder)
             return False
 
     def connect(self):
@@ -244,80 +273,95 @@ class EmailHandler:
         return False
 
     def select_folder(self, folder_name):
-        """フォルダを選択し、接続状態を確認する（改善版）"""
+        """フォルダを選択し、接続状態を確認する（最適化版）"""
         MAX_RETRIES = 3
         retry_count = 0
+        last_error = None
         
         while retry_count < MAX_RETRIES:
             try:
-                # 接続状態の確認
-                if not self.verify_connection_state(['AUTH', 'SELECTED']):
-                    app_logger.debug("Connection state invalid, attempting reconnect")
-                    self.disconnect()
-                    if not self.connect():
-                        return False
-
+                # フォルダ名の正規化
                 if isinstance(folder_name, bytes):
                     folder_name = folder_name.decode('utf-8')
-
-                # 接続状態の検証
-                try:
-                    state = self.connection.state
-                    app_logger.debug(f"Current connection state before folder selection: {state}")
-                    
-                    if state != 'AUTH' and state != 'SELECTED':
-                        raise Exception(f"Invalid connection state: {state}")
-                        
-                except Exception as e:
-                    app_logger.error(f"Connection state error: {str(e)}")
-                    self.disconnect()
-                    if not self.connect():
-                        return False
                 
-                # 現在のフォルダと同じ場合はスキップ（ただし状態を確認）
+                # 接続状態の厳密な検証
+                if not self.verify_connection_state(['AUTH'], allow_reconnect=True):
+                    raise Exception("Failed to establish AUTH state")
+                
+                # 現在のフォルダーの状態確認
                 if self.current_folder == folder_name:
                     try:
-                        status, _ = self.connection.noop()
-                        if status == 'OK':
-                            app_logger.debug(f"Reusing current folder selection: {folder_name}")
-                            return True
-                    except:
-                        pass
-
-                # 既存の選択を解除
+                        if self.verify_connection_state(['SELECTED'], allow_reconnect=False):
+                            status, _ = self.connection.noop()
+                            if status == 'OK':
+                                app_logger.debug(f"Verified existing folder selection: {folder_name}")
+                                return True
+                    except Exception as e:
+                        app_logger.warning(f"Current folder state invalid: {str(e)}")
+                
+                # SELECTED状態からの遷移処理
+                if self.connection.state == 'SELECTED':
+                    try:
+                        self.connection.close()
+                        app_logger.debug("Successfully closed previous folder selection")
+                    except Exception as e:
+                        app_logger.warning(f"Error during folder close: {str(e)}")
+                        # CLOSEの失敗は致命的ではないため続行
+                
+                # 新しいフォルダの選択
                 try:
-                    self.connection.close()
-                    app_logger.debug("Closed previous folder selection")
-                except Exception as e:
-                    app_logger.debug(f"Error closing folder: {str(e)}")
-                
-                # フォルダ名をエンコード
-                encoded_folder = folder_name.encode('utf-7').decode('ascii')
-                status, response = self.connection.select(encoded_folder, readonly=True)
-                
-                if status == 'OK':
-                    self.current_folder = folder_name
-                    app_logger.debug(f"Selected folder: {folder_name}")
+                    # フォルダ名のエンコーディング
+                    encoded_folder = folder_name.encode('utf-7').decode('ascii')
+                    app_logger.debug(f"Attempting to select folder: {encoded_folder}")
                     
-                    # 選択後の状態を確認
+                    # readonly=Trueで選択（安全な操作のため）
+                    status, response = self.connection.select(encoded_folder, readonly=True)
+                    
+                    if status != 'OK':
+                        raise Exception(f"Folder selection failed: {response}")
+                    
+                    # 選択結果の検証
+                    if not isinstance(response, list) or not response:
+                        raise Exception("Invalid response from SELECT command")
+                    
+                    # メッセージ数の確認
+                    try:
+                        message_count = int(response[0])
+                        app_logger.debug(f"Selected folder contains {message_count} messages")
+                    except (ValueError, TypeError) as e:
+                        app_logger.warning(f"Could not parse message count: {str(e)}")
+                    
+                    # 状態の最終確認
                     if self.connection.state != 'SELECTED':
                         raise Exception("Folder selection did not result in SELECTED state")
-                        
+                    
+                    self.current_folder = folder_name
+                    app_logger.debug(f"Successfully selected folder: {folder_name}")
                     return True
-                else:
-                    app_logger.error(f"Failed to select folder: {folder_name}, Status: {status}, Response: {response}")
-                    raise Exception(f"Folder selection failed: {response}")
-
+                    
+                except Exception as e:
+                    last_error = str(e)
+                    raise Exception(f"Folder selection operation failed: {str(e)}")
+                
             except Exception as e:
                 app_logger.error(f"Error selecting folder {folder_name} (attempt {retry_count + 1}/{MAX_RETRIES}): {str(e)}")
                 retry_count += 1
+                
                 if retry_count < MAX_RETRIES:
+                    wait_time = min(5, 1 * (2 ** retry_count))  # 指数バックオフ（最大5秒）
+                    app_logger.debug(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                    
+                    # 再接続を試みる
                     self.disconnect()
-                    time.sleep(1 * retry_count)  # バックオフ
+                    if not self.connect():
+                        app_logger.error("Failed to reconnect during retry")
+                        continue
                 else:
+                    app_logger.error(f"All attempts to select folder failed. Last error: {last_error}")
                     self.disconnect()
                     return False
-
+        
         return False
 
     def keep_alive(self):
@@ -387,13 +431,37 @@ class EmailHandler:
                                         raise Exception("Failed to refresh connection")
                                     last_reconnect = current_time
 
-                                # メッセージを取得
-                                status, msg_data = self.connection.fetch(num, '(RFC822)')
-                                if status != 'OK' or not msg_data or not msg_data[0]:
-                                    continue
+                                # FETCH操作前の状態検証
+                                if not self.verify_connection_state(['SELECTED'], force_folder=folder):
+                                    app_logger.error(f"Connection not in SELECTED state before FETCH operation")
+                                    raise Exception("Invalid connection state for FETCH")
 
-                                email_body = msg_data[0][1]
-                                parsed_msg = self.parse_email_message(email_body)
+                                try:
+                                    # メッセージを取得
+                                    status, msg_data = self.connection.fetch(num, '(RFC822)')
+                                    if status != 'OK' or not msg_data or not msg_data[0]:
+                                        app_logger.warning(f"FETCH command failed or returned invalid data for message {num}")
+                                        continue
+
+                                    # レスポンスの解析と状態チェック
+                                    response_str = str(msg_data[0])
+                                    if 'BYE' in response_str or 'LOGOUT' in response_str:
+                                        app_logger.error("Connection received BYE/LOGOUT during FETCH")
+                                        raise Exception("Connection state changed during FETCH")
+
+                                    email_body = msg_data[0][1]
+                                    parsed_msg = self.parse_email_message(email_body)
+
+                                    # FETCH操作後の状態検証
+                                    if not self.verify_connection_state(['SELECTED'], allow_reconnect=False):
+                                        raise Exception("Connection state changed after FETCH")
+
+                                except Exception as e:
+                                    app_logger.error(f"Error during FETCH operation: {str(e)}")
+                                    # 接続状態の回復を試みる
+                                    if not self.verify_connection_state(['SELECTED'], force_folder=folder):
+                                        raise Exception("Failed to recover connection state")
+                                    continue
                                 
                                 if parsed_msg and parsed_msg['message_id']:
                                     parsed_msg['folder'] = folder
