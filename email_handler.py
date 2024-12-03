@@ -1,321 +1,290 @@
 import imaplib
 import email
 from email.header import decode_header
-from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 import re
-import traceback
-import threading
 import time
 import logging
-from models import db, EmailMessage
+import traceback
+import socket
+from datetime import datetime, timedelta
+import threading
+from typing import Optional, List, Dict, Set, Any
+from queue import Queue, Empty
+import functools
 
-# email_handler.py でもロガーを取得
+# Configure logging
 app_logger = logging.getLogger('mailchat')
 
-# Connection pool for IMAP connections
-_connection_pool = {}
-_pool_lock = threading.Lock()
-# 接続設定の最適化
-MAX_CONNECTIONS = 3  # 同時接続数を増加して並列処理を改善
-CONNECTION_TIMEOUT = 30  # タイムアウトを増加して安定性を向上
-MAX_RETRIES = 5  # リトライ回数を維持
-RETRY_DELAY = 3  # 初期リトライ間隔
-BATCH_SIZE = 10  # バッチサイズを適度に増加
-RECONNECT_INTERVAL = 180  # 再接続間隔を3分に延長
-KEEPALIVE_INTERVAL = 45  # キープアライブ間隔を延長
-THROTTLE_BACKOFF = 60  # スロットリング時の待機時間（秒）
-MAX_FOLDER_RETRY = 3  # フォルダー操作の最大リトライ回数
+# Constants
+MAX_RETRIES = 5
+MAX_FOLDER_RETRY = 3
+RETRY_DELAY = 1  # Base delay for exponential backoff
+CONNECTION_TIMEOUT = 30
+MAX_POOL_SIZE = 3
+KEEPALIVE_INTERVAL = 60
+RECONNECT_THRESHOLD = 300  # 5 minutes
 
-# スレッドプール管理の設定
-import threading
-from concurrent.futures import ThreadPoolExecutor
-_thread_pool = ThreadPoolExecutor(max_workers=MAX_CONNECTIONS)
-_connection_semaphore = threading.Semaphore(MAX_CONNECTIONS)
+class ConnectionPool:
+    def __init__(self, max_size: int = MAX_POOL_SIZE):
+        self.pool: Queue = Queue(maxsize=max_size)
+        self.lock = threading.Lock()
+        self.last_cleanup = datetime.now()
+        
+    def get_connection(self, handler) -> Optional[imaplib.IMAP4_SSL]:
+        try:
+            connection = self.pool.get_nowait()
+            if self._verify_connection(connection, handler):
+                return connection
+        except Empty:
+            pass
+        
+        return None
+        
+    def put_connection(self, connection: imaplib.IMAP4_SSL):
+        try:
+            self.pool.put_nowait(connection)
+        except:
+            self._logout_connection(connection)
+            
+    def _verify_connection(self, connection: imaplib.IMAP4_SSL, handler) -> bool:
+        try:
+            status, _ = connection.noop()
+            return status == 'OK'
+        except:
+            self._logout_connection(connection)
+            return False
+            
+    def _logout_connection(self, connection: imaplib.IMAP4_SSL):
+        try:
+            connection.logout()
+        except:
+            pass
+            
+    def cleanup(self):
+        with self.lock:
+            while not self.pool.empty():
+                try:
+                    connection = self.pool.get_nowait()
+                    self._logout_connection(connection)
+                except Empty:
+                    break
 
 class EmailHandler:
-    def __init__(self, email_address=None, password=None, imap_server=None):
+    _pool = ConnectionPool()
+    
+    def __init__(self, email_address: str, password: str, imap_server: str):
         self.email_address = email_address
         self.password = password
         self.imap_server = imap_server
-        self.connection = None
-        self.connection_key = f"{email_address}:{imap_server}"
-        self._lock = threading.Lock()
-        self.last_activity = None
-        self.current_folder = None
+        self.connection: Optional[imaplib.IMAP4_SSL] = None
+        self.last_activity = datetime.now()
+        self.lock = threading.Lock()
+        self.current_folder = None # Added to track current folder
 
-    def verify_connection_state(self, expected_states=None, allow_reconnect=True, force_folder=None):
-        """接続状態を検証し、必要に応じて状態遷移を処理する（タイムアウト対応版）"""
-        if not self.connection:
-            if not allow_reconnect:
-                return False
-            try:
-                # Set socket timeout for faster timeout detection
-                import socket
-                socket.setdefaulttimeout(CONNECTION_TIMEOUT)
-                
-                # Attempt reconnection with exponential backoff
-                for retry in range(MAX_RETRIES):
-                    try:
-                        if self.connect():
-                            break
-                        backoff_time = min(RETRY_DELAY * (2 ** retry), 30)  # Max 30 seconds
-                        app_logger.debug(f"Connection attempt {retry + 1} failed, waiting {backoff_time}s")
-                        time.sleep(backoff_time)
-                    except Exception as e:
-                        if 'timed out' in str(e).lower():
-                            app_logger.warning(f"Connection timed out (attempt {retry + 1})")
-                        else:
-                            app_logger.error(f"Reconnection error: {str(e)}")
-                        if retry == MAX_RETRIES - 1:
-                            return False
-                        continue
+    def connect(self) -> bool:
+        """IMAPサーバーに接続する（改善版）"""
+        with self.lock:
+            if self.connection:
+                if self.verify_connection_state(['AUTH', 'SELECTED']):
+                    self.last_activity = datetime.now()
+                    return True
+                self.disconnect()
+            
+            # Check connection pool first
+            self.connection = self._pool.get_connection(self)
+            if self.connection:
+                if self.verify_connection_state(['AUTH', 'SELECTED']):
+                    self.last_activity = datetime.now()
+                    return True
+                self.disconnect()
+            
+            retry_count = 0
+            while retry_count < MAX_RETRIES:
+                try:
+                    app_logger.debug(f"Connection attempt {retry_count + 1}/{MAX_RETRIES}")
                     
-                if not self.connection:
-                    return False
+                    # Set socket timeout
+                    socket.setdefaulttimeout(CONNECTION_TIMEOUT)
+                    
+                    # Create new connection
+                    self.connection = imaplib.IMAP4_SSL(self.imap_server)
+                    self.connection.login(self.email_address, self.password)
+                    app_logger.debug("Login successful")
+                    
+                    # Verify connection state
+                    if self.verify_connection_state(['AUTH']):
+                        self.last_activity = datetime.now()
+                        return True
+                        
+                except (socket.timeout, socket.gaierror) as e:
+                    app_logger.error(f"Connection timeout: {str(e)}")
+                except imaplib.IMAP4.error as e:
+                    app_logger.error(f"IMAP error: {str(e)}")
+                except Exception as e:
+                    app_logger.error(f"Connection error: {str(e)}")
+                    
+                retry_count += 1
+                if retry_count < MAX_RETRIES:
+                    backoff_time = min(RETRY_DELAY * (2 ** retry_count), 30)
+                    app_logger.debug(f"Retrying in {backoff_time} seconds...")
+                    time.sleep(backoff_time)
+                    self.disconnect()
+                    
+            app_logger.error("All connection attempts failed")
+            return False
+            
+    def disconnect(self):
+        """接続を切断する（改善版）"""
+        if self.connection:
+            try:
+                if self.verify_connection_state(['SELECTED']):
+                    try:
+                        self.connection.close()
+                    except Exception as e:
+                        app_logger.debug(f"Error closing folder: {str(e)}")
+                        
+                try:
+                    self.connection.logout()
+                except Exception as e:
+                    app_logger.debug(f"Error during logout: {str(e)}")
                     
             except Exception as e:
-                app_logger.error(f"Reconnection failed: {str(e)}")
-                return False
+                app_logger.error(f"Disconnect error: {str(e)}")
+            finally:
+                if self.connection:
+                    self._pool.put_connection(self.connection)
+                self.connection = None
+                
+    def verify_connection_state(self, allowed_states: List[str], allow_reconnect: bool = True) -> bool:
+        """接続状態を検証する（改善版）"""
+        if not self.connection:
+            if allow_reconnect:
+                return self.connect()
+            return False
             
         try:
-            current_state = self.connection.state
-            app_logger.debug(f"Current connection state: {current_state}")
-            
-            # LOGOUT状態のチェックと処理
-            if current_state == 'LOGOUT':
-                app_logger.warning("Connection in LOGOUT state, attempting recovery")
-                if not allow_reconnect:
-                    return False
-                self.disconnect()
-                if not self.connect():
-                    return False
-                current_state = self.connection.state
-            
-            if expected_states:
-                if current_state not in expected_states:
-                    app_logger.warning(f"Invalid state: {current_state}, expected: {expected_states}")
-                    
-                    # 状態遷移の体系的な処理
-                    try:
-                        # NONAUTH → AUTH
-                        if current_state == 'NONAUTH' and 'AUTH' in expected_states:
-                            status, _ = self.connection.login(self.email_address, self.password)
-                            if status != 'OK':
-                                raise Exception("Authentication failed")
-                            current_state = 'AUTH'
-                            app_logger.debug("Successfully transitioned to AUTH state")
-                        
-                        # AUTH → SELECTED
-                        if current_state == 'AUTH' and 'SELECTED' in expected_states:
-                            folder_to_select = force_folder or self.current_folder
-                            if folder_to_select:
-                                if not self.select_folder(folder_to_select):
-                                    raise Exception("Failed to transition to SELECTED state")
-                                current_state = 'SELECTED'
-                                app_logger.debug(f"Successfully transitioned to SELECTED state with folder: {folder_to_select}")
-                            else:
-                                app_logger.warning("No folder specified for SELECTED state transition")
-                                return False
-                        
-                        # 状態遷移後の検証
-                        if current_state not in expected_states:
-                            raise Exception(f"Failed to achieve expected state: {expected_states}")
-                            
-                    except Exception as e:
-                        app_logger.error(f"State transition failed: {str(e)}")
-                        if allow_reconnect:
-                            app_logger.debug("Attempting reconnection after failed state transition")
-                            self.disconnect()
-                            return self.verify_connection_state(expected_states, False, force_folder)
-                        return False
-            
-            # 接続の生存確認と状態保持の検証
-            try:
-                status, response = self.connection.noop()
-                if status != 'OK':
-                    raise Exception("NOOP check failed")
-                    
-                # レスポンスの詳細な解析
-                if isinstance(response, list) and response:
-                    response_str = str(response[0])
-                    if 'BYE' in response_str or 'LOGOUT' in response_str:
-                        raise Exception("Connection received BYE/LOGOUT response")
-                
-                return True
-                
-            except Exception as e:
-                app_logger.error(f"Connection check failed: {str(e)}")
+            status, response = self.connection.noop()
+            if status != 'OK':
+                app_logger.warning(f"NOOP command failed: {response}")
                 if allow_reconnect:
-                    app_logger.debug("Attempting reconnection after failed connection check")
                     self.disconnect()
-                    return self.verify_connection_state(expected_states, False, force_folder)
+                    return self.connect()
                 return False
                 
-        except Exception as e:
+            # Check connection age
+            if (datetime.now() - self.last_activity).total_seconds() > RECONNECT_THRESHOLD:
+                app_logger.debug("Connection age exceeded threshold, reconnecting...")
+                if allow_reconnect:
+                    self.disconnect()
+                    return self.connect()
+                return False
+                
+            return True
+            
+        except (socket.timeout, imaplib.IMAP4.error) as e:
             app_logger.error(f"Connection state verification failed: {str(e)}")
             if allow_reconnect:
-                return self.verify_connection_state(expected_states, False, force_folder)
+                self.disconnect()
+                return self.connect()
             return False
-
-    def connect(self):
-        """IMAPサーバーに接続（タイムアウト・再接続対応版）"""
-        last_error = None
-        for retry in range(MAX_RETRIES):
+            
+    def get_contacts(self, search_query=None, limit=100) -> List[str]:
+        """メールの連絡先一覧を取得する（改善版）"""
+        contacts: Set[str] = set()
+        retry_count = 0
+        
+        while retry_count < MAX_RETRIES:
             try:
-                # Add timeout to semaphore acquisition
-                if not _connection_semaphore.acquire(timeout=min(CONNECTION_TIMEOUT, 10)):
-                    raise Exception("接続制限に達しました")
-                
-                # Set specific timeout for socket operations
-                import socket
-                socket.setdefaulttimeout(CONNECTION_TIMEOUT)
+                if not self.verify_connection_state(['AUTH', 'SELECTED'], allow_reconnect=True):
+                    app_logger.error("Failed to establish connection")
+                    retry_count += 1
+                    continue
                     
+                # Select INBOX
                 try:
-                    with _pool_lock:
-                        # キープアライブタイマーの初期化
-                        self.last_keepalive = time.time()
-                        # プール内の期限切れ接続をクリーンアップ
-                        current_time = time.time()
-                        for key in list(_connection_pool.keys()):
-                            conn_info = _connection_pool[key]
-                            if current_time - conn_info['last_activity'] > CONNECTION_TIMEOUT or \
-                               current_time - conn_info['created_at'] > RECONNECT_INTERVAL or \
-                               conn_info.get('throttled', False):
-                                try:
-                                    conn_info['connection'].logout()
-                                except Exception as e:
-                                    app_logger.warning(f"Logout failed for expired connection {key}: {str(e)}")
-                                del _connection_pool[key]
-                                app_logger.debug(f"Removed expired/throttled connection: {key}")
-
-                        # スロットリング状態のチェック
-                        if hasattr(self, 'throttled_until') and time.time() < self.throttled_until:
-                            wait_time = self.throttled_until - time.time()
-                            app_logger.debug(f"Waiting for throttling timeout: {wait_time:.1f} seconds")
-                            time.sleep(min(wait_time, THROTTLE_BACKOFF))
-                            continue
-
-                        # 既存の接続を再利用（タイムアウト検出強化）
-                        if self.connection_key in _connection_pool:
-                            conn_info = _connection_pool[self.connection_key]
-                            try:
-                                # Set socket timeout for connection check
-                                conn_info['connection'].socket().settimeout(10)
-                                
-                                # 厳密な接続状態チェック with timeout handling
-                                try:
-                                    status, response = conn_info['connection'].noop()
-                                except Exception as e:
-                                    if 'timed out' in str(e).lower():
-                                        app_logger.warning("Connection timed out during NOOP check")
-                                        raise Exception("Connection timeout detected")
-                                    raise
-                                
-                                # スロットリング検出
-                                if isinstance(response, list) and response and b'THROTTLED' in response[0]:
-                                    app_logger.warning("Connection throttled, backing off...")
-                                    conn_info['throttled'] = True
-                                    self.throttled_until = time.time() + THROTTLE_BACKOFF
-                                    raise Exception("Connection throttled")
-                                
-                                if status != 'OK':
-                                    raise Exception(f"NOOP failed with status: {status}")
-                                
-                                # 接続状態の検証と適切な遷移
-                                try:
-                                    state = conn_info['connection'].state
-                                    app_logger.debug(f"Connection state: {state}")
-                                    
-                                    # 状態に応じた適切な処理
-                                    if state == 'NONAUTH':
-                                        # NONAUTHの場合は新規認証
-                                        status, _ = conn_info['connection'].login(self.email_address, self.password)
-                                        if status != 'OK':
-                                            raise Exception("Authentication failed")
-                                        app_logger.debug("Authenticated successfully")
-                                    elif state == 'AUTH':
-                                        # AUTH状態では再認証は行わない
-                                        app_logger.debug("Connection already authenticated")
-                                    elif state == 'SELECTED':
-                                        # SELECTED状態の場合はリセット
-                                        try:
-                                            conn_info['connection'].close()
-                                            app_logger.debug("Reset folder selection")
-                                        except Exception as e:
-                                            app_logger.warning(f"Error closing folder: {str(e)}")
-                                    else:
-                                        raise Exception(f"Unknown connection state: {state}")
-                                    
-                                    # 接続状態の最終確認
-                                    if not self.verify_connection_state(['AUTH'], allow_reconnect=False):
-                                        raise Exception("Failed to establish proper connection state")
-                                except Exception as e:
-                                    app_logger.warning(f"State verification failed: {str(e)}")
-                                    raise
-                                
-                                self.connection = conn_info['connection']
-                                conn_info['last_activity'] = time.time()
-                                app_logger.debug("Reusing existing connection")
-                                return True
-                            except Exception as e:
-                                app_logger.warning(f"Connection reuse failed: {str(e)}")
-                                try:
-                                    conn_info['connection'].logout()
-                                except:
-                                    pass
-                                del _connection_pool[self.connection_key]
-
-                        # プールが最大数に達している場合、最も古い接続を切断
-                        if len(_connection_pool) >= MAX_CONNECTIONS:
-                            oldest_key = min(_connection_pool.keys(),
-                                           key=lambda k: _connection_pool[k]['last_activity'])
-                            try:
-                                _connection_pool[oldest_key]['connection'].logout()
-                            except:
-                                pass
-                            del _connection_pool[oldest_key]
-                            app_logger.debug("Removed oldest connection from pool")
-
-                        # 新規接続を作成（タイムアウト処理・再接続ロジック改善）
-                        app_logger.debug(f"Creating new connection to {self.imap_server}...")
-                        try:
-                            self.connection = imaplib.IMAP4_SSL(self.imap_server)
-                            self.connection.socket().settimeout(CONNECTION_TIMEOUT)
-                        except Exception as e:
-                            if 'timed out' in str(e).lower():
-                                app_logger.warning("Connection timed out during creation")
-                                if retry < MAX_RETRIES - 1:
-                                    continue
-                            raise
-
-                        # ログイン試行
-                        app_logger.debug("Attempting login...")
-                        status, _ = self.connection.login(self.email_address, self.password)
-                        if status != 'OK':
-                            raise Exception("Login failed")
-                        app_logger.debug("Login successful")
-
-                        # プールに追加
-                        _connection_pool[self.connection_key] = {
-                            'connection': self.connection,
-                            'last_activity': time.time(),
-                            'created_at': time.time()
-                        }
-                        return True
-                finally:
-                    _connection_semaphore.release()
-
-            except Exception as e:
-                app_logger.error(f"Connection attempt {retry + 1} failed: {str(e)}")
-                if retry < MAX_RETRIES - 1:
-                    time.sleep(RETRY_DELAY * (2 ** retry))  # 指数バックオフ
-                else:
+                    status, _ = self.connection.select('INBOX', readonly=True)
+                    if status != 'OK':
+                        raise Exception("Failed to select INBOX")
+                    app_logger.debug("Selected INBOX folder")
+                except Exception as e:
+                    app_logger.error(f"Folder selection error: {str(e)}")
                     raise
-
-        return False
-
-    def select_folder(self, folder_name):
+                    
+                # Search for messages
+                search_cmd = '(SINCE "1-Dec-2023")'
+                status, messages = self.connection.search(None, search_cmd)
+                if status != 'OK':
+                    raise Exception("Search command failed")
+                    
+                if not messages[0]:
+                    app_logger.debug("No messages found")
+                    return []
+                    
+                # Process messages
+                message_nums = messages[0].split()[-limit:]
+                app_logger.debug(f"Processing {len(message_nums)} messages")
+                
+                for num in message_nums:
+                    try:
+                        if not self.verify_connection_state(['SELECTED']):
+                            raise Exception("Connection state invalid")
+                            
+                        status, msg_data = self.connection.fetch(num, '(BODY[HEADER.FIELDS (FROM)])')
+                        if status != 'OK' or not msg_data or not msg_data[0]:
+                            continue
+                            
+                        header_data = msg_data[0][1]
+                        if isinstance(header_data, bytes):
+                            msg = email.message_from_bytes(header_data)
+                            from_addr = self.decode_str(msg['from'])
+                            if from_addr and (not search_query or search_query.lower() in from_addr.lower()):
+                                contacts.add(from_addr)
+                                
+                    except (socket.timeout, imaplib.IMAP4.error) as e:
+                        app_logger.error(f"Message processing error: {str(e)}")
+                        if 'timeout' in str(e).lower():
+                            raise  # Re-raise timeout errors for retry
+                            
+                # Success - return results
+                return sorted(list(contacts))
+                
+            except (socket.timeout, imaplib.IMAP4.error) as e:
+                app_logger.error(f"Connection error (attempt {retry_count + 1}): {str(e)}")
+                self.disconnect()
+                retry_count += 1
+                if retry_count < MAX_RETRIES:
+                    backoff_time = min(RETRY_DELAY * (2 ** retry_count), 30)
+                    app_logger.debug(f"Retrying in {backoff_time} seconds...")
+                    time.sleep(backoff_time)
+                    
+        app_logger.error("Maximum retry attempts reached")
+        return sorted(list(contacts))  # Return any contacts found before failure
+        
+    def decode_str(self, s: Optional[str]) -> str:
+        """文字列をデコードする"""
+        if not s:
+            return ""
+        try:
+            decoded_parts = decode_header(s)
+            result = ""
+            for part, encoding in decoded_parts:
+                if isinstance(part, bytes):
+                    try:
+                        if encoding:
+                            result += part.decode(encoding)
+                        else:
+                            result += part.decode('utf-8', errors='replace')
+                    except Exception:
+                        result += part.decode('utf-8', errors='replace')
+                else:
+                    result += str(part)
+            return result
+        except Exception as e:
+            app_logger.error(f"String decoding error: {str(e)}")
+            return str(s)
+            
+    def select_folder(self, folder_name: str) -> bool:
         """フォルダを選択し、接続状態を確認する（最適化版）"""
         MAX_RETRIES = 3
         retry_count = 0
@@ -407,20 +376,70 @@ class EmailHandler:
         
         return False
 
-    def keep_alive(self):
-        """接続をキープアライブするためのNOOPコマンドを実行"""
+    def get_gmail_folders(self):
+        """Gmailフォルダー一覧を取得する（改善版）"""
         try:
-            if self.connection and time.time() - self.last_keepalive > KEEPALIVE_INTERVAL:
-                status, _ = self.connection.noop()
-                if status != 'OK':
-                    raise Exception("NOOP failed")
-                self.last_keepalive = time.time()
-                app_logger.debug("Keep-alive NOOP successful")
-                return True
-            return True
+            # LIST操作前の状態検証
+            if not self.verify_connection_state(['AUTH', 'SELECTED'], allow_reconnect=True):
+                raise Exception("Invalid connection state for LIST operation")
+            
+            app_logger.debug("Retrieving Gmail folders...")
+            retry_count = 0
+            
+            while retry_count < MAX_FOLDER_RETRY:
+                try:
+                    # LIST操作の実行
+                    status, folder_list = self.connection.list()
+                    
+                    # レスポンス形式の厳密な検証
+                    if status != 'OK':
+                        raise Exception(f"LIST command failed with status: {status}")
+                        
+                    if not isinstance(folder_list, list):
+                        raise Exception("Invalid response format from LIST command")
+                        
+                    # フォルダー情報の解析と検証
+                    sent_folder = None
+                    for folder_data in folder_list:
+                        if isinstance(folder_data, bytes):
+                            folder_str = folder_data.decode('utf-8')
+                            # Gmailの送信済みフォルダーを識別
+                            if '[Gmail]/送信済みメール' in folder_str or '[Gmail]/Sent Mail' in folder_str:
+                                sent_folder = folder_str.split('"/"')[-1].strip('"').strip()
+                                app_logger.debug(f"Found sent folder: {sent_folder}")
+                                break
+                    
+                    return sent_folder
+                    
+                except Exception as e:
+                    retry_count += 1
+                    error_msg = str(e)
+                    app_logger.error(f"Folder operation error (attempt {retry_count}): {error_msg}")
+                    
+                    # エラータイプに基づく適切なリカバリー処理
+                    if 'timed out' in error_msg.lower():
+                        # タイムアウトの場合は接続を再確立
+                        self.disconnect()
+                        if not self.connect():
+                            raise Exception("Failed to reconnect after timeout")
+                        time.sleep(min(RETRY_DELAY * (2 ** retry_count), 15))
+                    elif 'BYE' in error_msg or 'LOGOUT' in error_msg:
+                        # 接続が切断された場合
+                        if not self.verify_connection_state(['AUTH'], allow_reconnect=True):
+                            raise Exception("Failed to recover connection state")
+                        time.sleep(1)
+                    else:
+                        # その他のエラーは通常のバックオフ
+                        time.sleep(min(RETRY_DELAY * (2 ** retry_count), 30))
+                    
+                    if retry_count == MAX_FOLDER_RETRY:
+                        raise Exception("Maximum retry attempts reached for folder operation")
+                        
         except Exception as e:
-            app_logger.error(f"Keep-alive failed: {str(e)}")
-            return False
+            app_logger.error(f"Failed to retrieve Gmail folders: {str(e)}")
+            raise
+            
+        return None
 
     def check_new_emails(self):
         """新着メールを確認し、パースして返す（最適化版）"""
@@ -533,23 +552,6 @@ class EmailHandler:
         app_logger.debug(f"Total new emails synchronized: {len(new_emails)}")
         return new_emails
 
-    def disconnect(self):
-        """接続を切断（プール対応）"""
-        with _pool_lock:
-            try:
-                if self.connection_key in _connection_pool:
-                    try:
-                        _connection_pool[self.connection_key]['connection'].close()
-                        _connection_pool[self.connection_key]['connection'].logout()
-                    except:
-                        pass
-                    finally:
-                        del _connection_pool[self.connection_key]
-                        self.connection = None
-                        app_logger.debug("Connection removed from pool and logged out")
-            except Exception as e:
-                app_logger.error(f"Error during disconnect: {str(e)}")
-                self.connection = None
 
     def encode_folder_name(self, folder):
         """フォルダー名をUTF-7でエンコードする"""
@@ -574,115 +576,9 @@ class EmailHandler:
                 return folder  # エラーが発生したらそのままフォルダー名を使う
         return folder
 
-    def get_contacts(self, search_query=None, limit=100):
-        """メールの連絡先一覧を取得する"""
-        contacts = set()
-        if not self.connection:
-            self.connect()
-            if not self.connection:  # Check again after attempting to connect
-                app_logger.error("Failed to establish a connection.")
-                return []  # Return early if the connection is not established
+    def __del__(self):
+        self.disconnect()
 
-        try:
-            self.connection.select('INBOX', readonly=True)
-            app_logger.debug("Selected INBOX folder")
-
-            search_cmd = '(SINCE "1-Dec-2023")'
-            app_logger.debug(f"Executing search command: {search_cmd}")
-            _, messages = self.connection.search(None, search_cmd)
-
-            if not messages[0]:
-                app_logger.debug("No messages found")
-                return []
-
-            message_nums = messages[0].split()[-limit:]
-            app_logger.debug(f"Processing {len(message_nums)} messages")
-
-            for num in message_nums:
-                try:
-                    _, msg_data = self.connection.fetch(num, '(BODY[HEADER.FIELDS (FROM)])')
-                    if msg_data and msg_data[0]:
-                        header_data = msg_data[0][1]
-                        if isinstance(header_data, bytes):
-                            msg = email.message_from_bytes(header_data)
-                            from_addr = self.decode_str(msg['from'])
-                            if from_addr:
-                                if not search_query or search_query.lower() in from_addr.lower():
-                                    contacts.add(from_addr)
-                except Exception as e:
-                    app_logger.error(f"ヘッダー処理エラー: {str(e)}")
-                    continue
-
-            app_logger.debug(f"Found {len(contacts)} unique contacts")
-            return sorted(list(contacts))
-
-        except Exception as e:
-            app_logger.error(f"連絡先取得エラー: {str(e)}")
-            self.disconnect()  # エラー時は接続を解放
-            raise
-        finally:
-            # 接続は保持したままにする（プーリング対応）
-            pass
-
-    def test_connection(self):
-        """IMAPサーバーへの接続をテストする（改善版）"""
-        app_logger.debug(f"=== Test Connection Started ===")
-        app_logger.debug(f"Server: {self.imap_server}")
-        app_logger.debug(f"Email: {self.email_address}")
-
-        try:
-            for retry in range(MAX_RETRIES):
-                try:
-                    app_logger.debug(f"Connection attempt {retry + 1}/{MAX_RETRIES}")
-                    if not self.connect():
-                        raise Exception("Failed to establish connection")
-                        
-                    # 接続状態の検証
-                    if not self.verify_connection_state(['AUTH']):
-                        raise Exception("Connection not in AUTH state after connect")
-                    app_logger.debug("IMAP connection successful")
-
-                    # フォルダーリスト取得時のタイムアウト処理
-                    def list_folders():
-                        import socket
-                        socket.setdefaulttimeout(CONNECTION_TIMEOUT)
-                        return self.connection.list()
-
-                    app_logger.debug("Listing folders...")
-                    _, folders = list_folders()
-
-                    if not folders:
-                        raise Exception("No folders returned")
-
-                    app_logger.debug("Available folders:")
-                    for folder in folders:
-                        decoded_folder = self.decode_folder_name(folder)
-                        app_logger.debug(f"Folder: {decoded_folder}")
-
-                    # 接続状態の最終確認
-                    status, _ = self.connection.noop()
-                    if status != 'OK':
-                        raise Exception("Final NOOP check failed")
-
-                    app_logger.debug("=== Test Connection Successful ===")
-                    return True
-
-                except Exception as e:
-                    app_logger.error(f"Connection attempt {retry + 1} failed: {str(e)}")
-                    if retry < MAX_RETRIES - 1:
-                        backoff_time = RETRY_DELAY * (2 ** retry)  # 指数バックオフ
-                        app_logger.debug(f"Retrying in {backoff_time} seconds...")
-                        time.sleep(backoff_time)
-                        self.disconnect()  # 再試行前に接続をクリーンアップ
-                    else:
-                        app_logger.error("All connection attempts failed")
-                        return False
-        finally:
-            app_logger.debug("Closing connection...")
-            self.disconnect()
-            app_logger.debug("=== Test Connection Completed ===")
-
-    
     def get_conversation(self, contact_email, search_query=None):
         """特定の連絡先とのメール会話を取得する"""
         messages = []
@@ -691,7 +587,7 @@ class EmailHandler:
             if not self.connection:
                 raise Exception("IMAP接続に失敗しました。接続がNoneです。")
 
-            sent_folder = self.get_gmail_folders(self.connection)
+            sent_folder = self.get_gmail_folders()
             folders = ['INBOX']  # フォルダーは str 型で扱う
             if sent_folder:
                 folders.append(sent_folder)
@@ -772,28 +668,6 @@ class EmailHandler:
             else:
                 result += str(part)
         return result
-
-    def get_gmail_folders(self, connection=None):
-        """Gmailフォルダー名を取得"""
-        try:
-            if not connection:
-                if not self.connect():
-                    return None
-                connection = self.connection
-
-            _, folders = connection.list(directory='""', pattern='%')
-            sent_folder = None
-            for folder_data in folders:
-                folder_info = folder_data.decode('utf-8')
-                if '[Gmail]' in folder_info and ('送信済み' in folder_info or 'Sent' in folder_info):
-                    match = re.search(r'"([^"]+)"$', folder_info)
-                    if match:
-                        sent_folder = match.group(1)
-                        break
-            return sent_folder
-        except Exception as e:
-            app_logger.error(f"Gmailフォルダー取得エラー: {str(e)}")
-            return None
 
     def parse_email_message(self, email_body):
         """メールメッセージをパースしてディクショナリを返す"""
