@@ -1,0 +1,33 @@
+024-12-03 22:40:50,885 - mailchat - WARNING - Invalid connection state: AUTH, expected one of ['SELECTED']
+2024-12-03 22:40:50,885 - mailchat - DEBUG - Attempting to select folder: INBOX
+2024-12-03 22:40:51,353 - mailchat - DEBUG - Selected folder contains 86877 messages
+2024-12-03 22:40:51,353 - mailchat - DEBUG - Successfully selected folder: INBOX
+2024-12-03 22:40:53,369 - mailchat - ERROR - Connection received BYE/LOGOUT during FETCH
+2024-12-03 22:40:53,369 - mailchat - ERROR - Error during FETCH operation: Connection state changed during FETCH
+2024-12-03 22:40:56,909 - mailchat - DEBUG - Refreshing connection...
+2024-12-03 22:40:57,737 - mailchat - DEBUG - Creating new connection to imap.gmail.com...
+2024-12-03 22:40:57,737 - mailchat - DEBUG - Connection attempt 1/5
+2024-12-03 22:40:58,387 - mailchat - DEBUG - Attempting login...
+2024-12-03 22:40:59,083 - mailchat - DEBUG - Login successful
+2024-12-03 22:40:59,083 - mailchat - DEBUG - Current connection state: AUTH
+2024-12-03 22:41:00,038 - mailchat - WARNING - Invalid connection state: AUTH, expected one of ['SELECTED']
+2024-12-03 22:41:00,038 - mailchat - DEBUG - Attempting to select folder: INBOX
+2024-12-03 22:41:00,528 - mailchat - DEBUG - Selected folder contains 86877 messages
+2024-12-03 22:41:00,528 - mailchat - DEBUG - Successfully selected folder: INBOX
+2024-12-03 22:41:02,655 - mailchat - DEBUG - Refreshing connection...
+2024-12-03 22:41:03,559 - mailchat - DEBUG - Creating new connection to imap.gmail.com...
+2024-12-03 22:41:03,559 - mailchat - DEBUG - Connection attempt 1/5
+2024-12-03 22:41:04,200 - mailchat - DEBUG - Attempting login...
+2024-12-03 22:41:04,923 - mailchat - DEBUG - Login successful
+2024-12-03 22:41:04,923 - mailchat - DEBUG - Current connection state: AUTH
+2024-12-03 22:41:05,789 - mailchat - WARNING - Invalid connection state: AUTH, expected one of ['SELECTED']
+2024-12-03 22:41:05,789 - mailchat - DEBUG - Attempting to select folder: INBOX
+2024-12-03 22:41:06,279 - mailchat - DEBUG - Selected folder contains 86877 messages
+2024-12-03 22:41:06,279 - mailchat - DEBUG - Successfully selected folder: INBOX
+2024-12-03 22:41:07,754 - mailchat - ERROR - Connection received BYE/LOGOUT during FETCH
+2024-12-03 22:41:07,754 - mailchat - ERROR - Error during FETCH operation: Connection state changed during FETCH
+2024-12-03 22:41:10,118 - mailchat - ERROR - Connection received BYE/LOGOUT during FETCH
+2024-12-03 22:41:10,118 - mailchat - ERROR - Error during FETCH operation: Connection state changed during FETCH
+2024-12-03 22:41:20,119 - mailchat - DEBUG - Refreshing connection...
+2024-12-03 22:41:21,038 - mailchat - DEBUG - Creating new connection to imap.gmail.com...
+2024-12-03 22:41:21,038 - mailchat - DEBUG - Connection attempt 1/5

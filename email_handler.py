@@ -242,7 +242,7 @@ class EmailHandler:
                 self.connection = None
                 
     def verify_connection_state(self, allowed_states: List[str], allow_reconnect: bool = True, force_folder: str = None) -> bool:
-        """接続状態を検証する（タイムアウト対応改善版）"""
+        """接続状態を検証する（状態遷移管理強化版）"""
         if not self.connection:
             if allow_reconnect:
                 return self.connect()
@@ -254,46 +254,94 @@ class EmailHandler:
             socket.setdefaulttimeout(10)  # 10 seconds timeout for verification
             
             try:
+                # NOOP前の状態確認
+                pre_noop_state = getattr(self.connection, 'state', None)
                 status, response = self.connection.noop()
+                
                 if status != 'OK':
                     app_logger.warning(f"NOOP command failed: {response}")
                     raise imaplib.IMAP4.error("NOOP command failed")
+                
+                # NOOP後の状態変化をチェック
+                post_noop_state = getattr(self.connection, 'state', None)
+                if pre_noop_state != post_noop_state:
+                    app_logger.warning(f"State changed during NOOP: {pre_noop_state} -> {post_noop_state}")
+                    raise imaplib.IMAP4.error("Unexpected state change during NOOP")
                     
             except (socket.timeout, imaplib.IMAP4.error) as e:
                 app_logger.warning(f"Connection check failed: {str(e)}")
                 if allow_reconnect:
                     self.disconnect()
+                    # より長いバックオフ時間を設定
+                    backoff_time = min(30, len(allowed_states) * 10)
+                    app_logger.debug(f"Backing off for {backoff_time} seconds before reconnect...")
+                    time.sleep(backoff_time)
+                    
                     reconnected = self.connect()
                     if reconnected and force_folder:
-                        return self.select_folder(force_folder)
+                        if not self.select_folder(force_folder):
+                            app_logger.error("Failed to select folder after reconnect")
+                            return False
                     return reconnected
                 return False
                 
             finally:
                 socket.setdefaulttimeout(original_timeout)
                 
-            # Verify connection state matches expected state
+            # Verify connection state matches expected state with additional checks
             current_state = getattr(self.connection, 'state', None)
             if current_state not in allowed_states:
                 app_logger.warning(f"Invalid connection state: {current_state}, expected one of {allowed_states}")
+                
+                # SELECTED状態への遷移が必要な場合の追加検証
+                if 'SELECTED' in allowed_states and current_state == 'AUTH':
+                    app_logger.debug("Attempting to transition from AUTH to SELECTED state")
+                    if force_folder and self.select_folder(force_folder):
+                        return True
+                
                 if allow_reconnect:
                     self.disconnect()
+                    # 状態遷移失敗時の長いバックオフ時間
+                    backoff_time = min(45, len(allowed_states) * 15)
+                    app_logger.debug(f"State transition failed, backing off for {backoff_time} seconds...")
+                    time.sleep(backoff_time)
+                    
                     reconnected = self.connect()
                     if reconnected and force_folder:
-                        return self.select_folder(force_folder)
+                        if not self.select_folder(force_folder):
+                            app_logger.error("Failed to select folder after state transition")
+                            return False
                     return reconnected
                 return False
                 
-            # Check connection age
-            if (datetime.now() - self.last_activity).total_seconds() > RECONNECT_THRESHOLD:
-                app_logger.debug("Connection age exceeded threshold, reconnecting...")
+            # Check connection age with dynamic threshold
+            age = (datetime.now() - self.last_activity).total_seconds()
+            dynamic_threshold = RECONNECT_THRESHOLD * (1.5 if 'SELECTED' in allowed_states else 1.0)
+            
+            if age > dynamic_threshold:
+                app_logger.debug(f"Connection age ({age}s) exceeded threshold ({dynamic_threshold}s), reconnecting...")
                 if allow_reconnect:
                     self.disconnect()
                     reconnected = self.connect()
                     if reconnected and force_folder:
-                        return self.select_folder(force_folder)
+                        if not self.select_folder(force_folder):
+                            app_logger.error("Failed to select folder after age-based reconnect")
+                            return False
                     return reconnected
                 return False
+                
+            # 接続プールの状態管理の改善
+            if current_state == 'AUTH' and not force_folder:
+                try:
+                    # プール内の接続を更新
+                    self._pool.put_connection(self.connection)
+                    self.connection = self._pool.get_connection(self)
+                    if not self.connection:
+                        app_logger.debug("Failed to get connection from pool, creating new connection")
+                        return self.connect()
+                except Exception as e:
+                    app_logger.error(f"Connection pool management error: {str(e)}")
+                    return self.connect() if allow_reconnect else False
                 
             # Update last activity time
             self.last_activity = datetime.now()
@@ -303,9 +351,16 @@ class EmailHandler:
             app_logger.error(f"Connection state verification failed: {str(e)}")
             if allow_reconnect:
                 self.disconnect()
+                # エラータイプに基づくバックオフ時間の調整
+                backoff_time = min(60, len(allowed_states) * 20)
+                app_logger.debug(f"Verification failed, backing off for {backoff_time} seconds...")
+                time.sleep(backoff_time)
+                
                 reconnected = self.connect()
                 if reconnected and force_folder:
-                    return self.select_folder(force_folder)
+                    if not self.select_folder(force_folder):
+                        app_logger.error("Failed to select folder after error recovery")
+                        return False
                 return reconnected
             return False
             
@@ -562,10 +617,12 @@ class EmailHandler:
         return None
 
     def check_new_emails(self):
-        """新着メールを確認し、パースして返す（最適化版）"""
+        """新着メールを確認し、パースして返す（改善版）"""
         new_emails = []
         last_reconnect = time.time()
         connection_error_count = 0
+        consecutive_success = 0
+        current_batch_size = 20  # 初期バッチサイズを20に設定
         batch_delay = 0.5  # バッチ間の待機時間（秒）
         
         try:
@@ -599,8 +656,20 @@ class EmailHandler:
                     app_logger.debug(f"Found {total_messages} messages in {folder}")
 
                     # バッチ処理でメッセージを取得
-                    for i in range(0, total_messages, BATCH_SIZE):
-                        batch = message_nums[i:i + BATCH_SIZE]
+                    for i in range(0, total_messages, current_batch_size):
+                        batch = message_nums[i:i + current_batch_size]
+                        batch_errors = 0
+                        
+                        # バッチ処理前のNOOP確認
+                        try:
+                            status, _ = self.connection.noop()
+                            if status != 'OK':
+                                raise Exception("NOOP check failed before batch processing")
+                        except Exception as e:
+                            app_logger.error(f"NOOP check failed: {str(e)}")
+                            self.disconnect()
+                            if not self.connect() or not self.select_folder(folder):
+                                raise Exception("Failed to recover connection after NOOP failure")
                         
                         for num in batch:
                             try:
@@ -613,16 +682,26 @@ class EmailHandler:
                                         raise Exception("Failed to refresh connection")
                                     last_reconnect = current_time
 
-                                # FETCH操作前の状態検証
+                                # FETCH操作前の追加の状態検証
                                 if not self.verify_connection_state(['SELECTED'], force_folder=folder):
                                     app_logger.error(f"Connection not in SELECTED state before FETCH operation")
                                     raise Exception("Invalid connection state for FETCH")
+
+                                # FETCH操作前のNOOP確認
+                                try:
+                                    status, _ = self.connection.noop()
+                                    if status != 'OK':
+                                        raise Exception("NOOP check failed before FETCH")
+                                except Exception as e:
+                                    app_logger.error(f"NOOP check failed: {str(e)}")
+                                    raise
 
                                 try:
                                     # メッセージを取得
                                     status, msg_data = self.connection.fetch(num, '(RFC822)')
                                     if status != 'OK' or not msg_data or not msg_data[0]:
                                         app_logger.warning(f"FETCH command failed or returned invalid data for message {num}")
+                                        batch_errors += 1
                                         continue
 
                                     # レスポンスの解析と状態チェック
@@ -638,27 +717,50 @@ class EmailHandler:
                                     if not self.verify_connection_state(['SELECTED'], allow_reconnect=False):
                                         raise Exception("Connection state changed after FETCH")
 
+                                    if parsed_msg and parsed_msg['message_id']:
+                                        parsed_msg['folder'] = folder
+                                        parsed_msg['is_sent'] = folder == sent_folder
+                                        new_emails.append(parsed_msg)
+                                        consecutive_success += 1
+
                                 except Exception as e:
                                     app_logger.error(f"Error during FETCH operation: {str(e)}")
+                                    batch_errors += 1
+                                    consecutive_success = 0
                                     # 接続状態の回復を試みる
                                     if not self.verify_connection_state(['SELECTED'], force_folder=folder):
                                         raise Exception("Failed to recover connection state")
                                     continue
-                                
-                                if parsed_msg and parsed_msg['message_id']:
-                                    parsed_msg['folder'] = folder
-                                    parsed_msg['is_sent'] = folder == sent_folder
-                                    new_emails.append(parsed_msg)
 
                             except Exception as e:
                                 app_logger.error(f"Error processing message {num}: {str(e)}")
                                 connection_error_count += 1
+                                consecutive_success = 0
+                                batch_errors += 1
+                                
+                                # エラー回数に応じてバックオフ時間を延長
+                                backoff_time = min(30, (batch_errors * 5))
+                                app_logger.debug(f"Backing off for {backoff_time} seconds...")
+                                time.sleep(backoff_time)
+                                
                                 if connection_error_count > 5:
                                     raise Exception("Too many connection errors")
                                 continue
 
-                        # バッチ処理後の短い待機
-                        time.sleep(0.1)
+                        # バッチサイズの動的調整
+                        if batch_errors == 0 and consecutive_success >= current_batch_size:
+                            # 成功が続いている場合、バッチサイズを増やす
+                            current_batch_size = min(50, current_batch_size + 5)
+                            app_logger.debug(f"Increasing batch size to: {current_batch_size}")
+                        elif batch_errors > current_batch_size // 4:
+                            # エラーが多い場合、バッチサイズを減らす
+                            current_batch_size = max(5, current_batch_size - 5)
+                            app_logger.debug(f"Decreasing batch size to: {current_batch_size}")
+                            consecutive_success = 0
+
+                        # バッチ処理後の待機（エラー数に応じて調整）
+                        adjusted_delay = batch_delay * (1 + (batch_errors * 0.5))
+                        time.sleep(adjusted_delay)
 
                 except Exception as e:
                     app_logger.error(f"Error processing folder {folder}: {str(e)}")
