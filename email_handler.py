@@ -17,15 +17,21 @@ app_logger = logging.getLogger('mailchat')
 _connection_pool = {}
 _pool_lock = threading.Lock()
 # 接続設定の最適化
-MAX_CONNECTIONS = 1  # スロットリング対策として同時接続数を最小化
-CONNECTION_TIMEOUT = 20  # タイムアウトをさらに短縮
-MAX_RETRIES = 5  # リトライ回数を増やして信頼性を向上
-RETRY_DELAY = 3  # 初期リトライ間隔を調整
-BATCH_SIZE = 5  # バッチサイズをさらに小さく
-RECONNECT_INTERVAL = 120  # 再接続間隔を2分に短縮
-KEEPALIVE_INTERVAL = 30  # キープアライブ間隔を短縮
+MAX_CONNECTIONS = 3  # 同時接続数を増加して並列処理を改善
+CONNECTION_TIMEOUT = 30  # タイムアウトを増加して安定性を向上
+MAX_RETRIES = 5  # リトライ回数を維持
+RETRY_DELAY = 3  # 初期リトライ間隔
+BATCH_SIZE = 10  # バッチサイズを適度に増加
+RECONNECT_INTERVAL = 180  # 再接続間隔を3分に延長
+KEEPALIVE_INTERVAL = 45  # キープアライブ間隔を延長
 THROTTLE_BACKOFF = 60  # スロットリング時の待機時間（秒）
 MAX_FOLDER_RETRY = 3  # フォルダー操作の最大リトライ回数
+
+# スレッドプール管理の設定
+import threading
+from concurrent.futures import ThreadPoolExecutor
+_thread_pool = ThreadPoolExecutor(max_workers=MAX_CONNECTIONS)
+_connection_semaphore = threading.Semaphore(MAX_CONNECTIONS)
 
 class EmailHandler:
     def __init__(self, email_address=None, password=None, imap_server=None):
@@ -43,95 +49,101 @@ class EmailHandler:
         last_error = None
         for retry in range(MAX_RETRIES):
             try:
-                with _pool_lock:
-                    # キープアライブタイマーの初期化
-                    self.last_keepalive = time.time()
-                    # プール内の期限切れ接続をクリーンアップ
-                    current_time = time.time()
-                    for key in list(_connection_pool.keys()):
-                        conn_info = _connection_pool[key]
-                        if current_time - conn_info['last_activity'] > CONNECTION_TIMEOUT or \
-                           current_time - conn_info['created_at'] > RECONNECT_INTERVAL or \
-                           conn_info.get('throttled', False):
+                if not _connection_semaphore.acquire(timeout=CONNECTION_TIMEOUT):
+                    raise Exception("接続制限に達しました")
+                    
+                try:
+                    with _pool_lock:
+                        # キープアライブタイマーの初期化
+                        self.last_keepalive = time.time()
+                        # プール内の期限切れ接続をクリーンアップ
+                        current_time = time.time()
+                        for key in list(_connection_pool.keys()):
+                            conn_info = _connection_pool[key]
+                            if current_time - conn_info['last_activity'] > CONNECTION_TIMEOUT or \
+                               current_time - conn_info['created_at'] > RECONNECT_INTERVAL or \
+                               conn_info.get('throttled', False):
+                                try:
+                                    conn_info['connection'].logout()
+                                except Exception as e:
+                                    app_logger.warning(f"Logout failed for expired connection {key}: {str(e)}")
+                                del _connection_pool[key]
+                                app_logger.debug(f"Removed expired/throttled connection: {key}")
+
+                        # スロットリング状態のチェック
+                        if hasattr(self, 'throttled_until') and time.time() < self.throttled_until:
+                            wait_time = self.throttled_until - time.time()
+                            app_logger.debug(f"Waiting for throttling timeout: {wait_time:.1f} seconds")
+                            time.sleep(min(wait_time, THROTTLE_BACKOFF))
+                            continue
+
+                        # 既存の接続を再利用
+                        if self.connection_key in _connection_pool:
+                            conn_info = _connection_pool[self.connection_key]
                             try:
-                                conn_info['connection'].logout()
+                                # 厳密な接続状態チェック
+                                status, response = conn_info['connection'].noop()
+                                
+                                # スロットリング検出
+                                if isinstance(response, list) and response and b'THROTTLED' in response[0]:
+                                    app_logger.warning("Connection throttled, backing off...")
+                                    conn_info['throttled'] = True
+                                    self.throttled_until = time.time() + THROTTLE_BACKOFF
+                                    raise Exception("Connection throttled")
+                                
+                                if status != 'OK':
+                                    raise Exception(f"NOOP failed with status: {status}")
+                                
+                                # SELECT状態のリセット
+                                try:
+                                    conn_info['connection'].close()
+                                except:
+                                    pass
+                                
+                                self.connection = conn_info['connection']
+                                conn_info['last_activity'] = time.time()
+                                app_logger.debug("Reusing existing connection")
+                                return True
                             except Exception as e:
-                                app_logger.warning(f"Logout failed for expired connection {key}: {str(e)}")
-                            del _connection_pool[key]
-                            app_logger.debug(f"Removed expired/throttled connection: {key}")
+                                app_logger.warning(f"Connection reuse failed: {str(e)}")
+                                try:
+                                    conn_info['connection'].logout()
+                                except:
+                                    pass
+                                del _connection_pool[self.connection_key]
 
-                    # スロットリング状態のチェック
-                    if hasattr(self, 'throttled_until') and time.time() < self.throttled_until:
-                        wait_time = self.throttled_until - time.time()
-                        app_logger.debug(f"Waiting for throttling timeout: {wait_time:.1f} seconds")
-                        time.sleep(min(wait_time, THROTTLE_BACKOFF))
-                        continue
-
-                    # 既存の接続を再利用
-                    if self.connection_key in _connection_pool:
-                        conn_info = _connection_pool[self.connection_key]
-                        try:
-                            # 厳密な接続状態チェック
-                            status, response = conn_info['connection'].noop()
-                            
-                            # スロットリング検出
-                            if isinstance(response, list) and response and b'THROTTLED' in response[0]:
-                                app_logger.warning("Connection throttled, backing off...")
-                                conn_info['throttled'] = True
-                                self.throttled_until = time.time() + THROTTLE_BACKOFF
-                                raise Exception("Connection throttled")
-                            
-                            if status != 'OK':
-                                raise Exception(f"NOOP failed with status: {status}")
-                            
-                            # SELECT状態のリセット
+                        # プールが最大数に達している場合、最も古い接続を切断
+                        if len(_connection_pool) >= MAX_CONNECTIONS:
+                            oldest_key = min(_connection_pool.keys(),
+                                           key=lambda k: _connection_pool[k]['last_activity'])
                             try:
-                                conn_info['connection'].close()
+                                _connection_pool[oldest_key]['connection'].logout()
                             except:
                                 pass
-                            
-                            self.connection = conn_info['connection']
-                            conn_info['last_activity'] = time.time()
-                            app_logger.debug("Reusing existing connection")
-                            return True
-                        except Exception as e:
-                            app_logger.warning(f"Connection reuse failed: {str(e)}")
-                            try:
-                                conn_info['connection'].logout()
-                            except:
-                                pass
-                            del _connection_pool[self.connection_key]
+                            del _connection_pool[oldest_key]
+                            app_logger.debug("Removed oldest connection from pool")
 
-                    # プールが最大数に達している場合、最も古い接続を切断
-                    if len(_connection_pool) >= MAX_CONNECTIONS:
-                        oldest_key = min(_connection_pool.keys(),
-                                       key=lambda k: _connection_pool[k]['last_activity'])
-                        try:
-                            _connection_pool[oldest_key]['connection'].logout()
-                        except:
-                            pass
-                        del _connection_pool[oldest_key]
-                        app_logger.debug("Removed oldest connection from pool")
+                        # 新規接続を作成（タイムアウト処理改善）
+                        app_logger.debug(f"Creating new connection to {self.imap_server}...")
+                        self.connection = imaplib.IMAP4_SSL(self.imap_server)
+                        self.connection.socket().settimeout(CONNECTION_TIMEOUT)
 
-                    # 新規接続を作成（タイムアウト処理改善）
-                    app_logger.debug(f"Creating new connection to {self.imap_server}...")
-                    self.connection = imaplib.IMAP4_SSL(self.imap_server)
-                    self.connection.socket().settimeout(CONNECTION_TIMEOUT)
+                        # ログイン試行
+                        app_logger.debug("Attempting login...")
+                        status, _ = self.connection.login(self.email_address, self.password)
+                        if status != 'OK':
+                            raise Exception("Login failed")
+                        app_logger.debug("Login successful")
 
-                    # ログイン試行
-                    app_logger.debug("Attempting login...")
-                    status, _ = self.connection.login(self.email_address, self.password)
-                    if status != 'OK':
-                        raise Exception("Login failed")
-                    app_logger.debug("Login successful")
-
-                    # プールに追加
-                    _connection_pool[self.connection_key] = {
-                        'connection': self.connection,
-                        'last_activity': time.time(),
-                        'created_at': time.time()
-                    }
-                    return True
+                        # プールに追加
+                        _connection_pool[self.connection_key] = {
+                            'connection': self.connection,
+                            'last_activity': time.time(),
+                            'created_at': time.time()
+                        }
+                        return True
+                finally:
+                    _connection_semaphore.release()
 
             except Exception as e:
                 app_logger.error(f"Connection attempt {retry + 1} failed: {str(e)}")
@@ -139,6 +151,8 @@ class EmailHandler:
                     time.sleep(RETRY_DELAY * (2 ** retry))  # 指数バックオフ
                 else:
                     raise
+
+        return False
 
     def select_folder(self, folder_name):
         """フォルダを選択し、接続状態を確認する"""

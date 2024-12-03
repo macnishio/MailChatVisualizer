@@ -1,0 +1,32 @@
+Exception occurred during processing of request from ('127.0.0.1', 36544)
+Traceback (most recent call last):
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/socketserver.py", line 317, in _handle_request_noblock
+    self.process_request(request, client_address)
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/socketserver.py", line 705, in process_request
+    t.start()
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/threading.py", line 964, in start
+    _start_new_thread(self._bootstrap, ())
+RuntimeError: can't start new thread
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 36560)
+Traceback (most recent call last):
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/socketserver.py", line 317, in _handle_request_noblock
+    self.process_request(request, client_address)
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/socketserver.py", line 705, in process_request
+    t.start()
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/threading.py", line 964, in start
+    _start_new_thread(self._bootstrap, ())
+RuntimeError: can't start new thread
+----------------------------------------
+2024-12-03 00:49:17,960 - mailchat - DEBUG - Reusing existing connection
+2024-12-03 00:49:17,961 - mailchat - DEBUG - IMAP connection successful
+2024-12-03 00:49:17,961 - mailchat - DEBUG - Listing folders...
+2024-12-03 00:49:17,961 - mailchat - ERROR - Error processing message b'84871': cannot read from timed out object
+2024-12-03 00:49:17,961 - mailchat - ERROR - Error processing message b'84872': command FETCH illegal in state AUTH, only allowed in states SELECTED
+2024-12-03 00:49:17,961 - mailchat - ERROR - Error processing message b'84873': command FETCH illegal in state AUTH, only allowed in states SELECTED
+2024-12-03 00:49:17,961 - mailchat - ERROR - Connection attempt 1 failed: cannot read from timed out object
+2024-12-03 00:49:17,961 - mailchat - DEBUG - Retrying in 3 seconds...
+2024-12-03 00:49:18,061 - mailchat - ERROR - Error processing message b'84874': command FETCH illegal in state AUTH, only allowed in states SELECTED
+2024-12-03 00:49:18,061 - mailchat - ERROR - Error processing folder INBOX: Too many connection errors
+2024-12-03 00:49:18,061 - mailchat - DEBUG - Connection removed from pool and logged out

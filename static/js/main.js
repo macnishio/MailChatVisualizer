@@ -130,11 +130,17 @@ document.addEventListener('DOMContentLoaded', function() {
             debounceTimer = setTimeout(() => {
                 console.log('API呼び出し:', query);  // デバッグログ
                 fetch(`/api/search_contacts?q=${encodeURIComponent(query)}`)
-                    .then(response => response.json())
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
                     .then(data => {
                         console.log('検索結果:', data);  // デバッグログ
                         searchResults.innerHTML = '';
-                        if (data.length > 0) {
+                        
+                        if (Array.isArray(data) && data.length > 0) {
                             data.forEach(contact => {
                                 const item = document.createElement('a');
                                 item.className = 'dropdown-item';
