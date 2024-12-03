@@ -94,11 +94,28 @@ class EmailHandler:
                                 if status != 'OK':
                                     raise Exception(f"NOOP failed with status: {status}")
                                 
-                                # SELECT状態のリセット
+                                # 接続状態の検証
                                 try:
-                                    conn_info['connection'].close()
-                                except:
-                                    pass
+                                    state = conn_info['connection'].state
+                                    app_logger.debug(f"Connection state: {state}")
+                                    
+                                    # AUTH状態の場合は再認証を試みる
+                                    if state == 'AUTH':
+                                        status, _ = conn_info['connection'].login(self.email_address, self.password)
+                                        if status != 'OK':
+                                            raise Exception("Re-authentication failed")
+                                        app_logger.debug("Re-authenticated successfully")
+                                    
+                                    # 前回のフォルダー選択状態をリセット
+                                    if hasattr(self, 'current_folder') and self.current_folder:
+                                        try:
+                                            conn_info['connection'].close()
+                                            self.current_folder = None
+                                        except:
+                                            pass
+                                except Exception as e:
+                                    app_logger.warning(f"State verification failed: {str(e)}")
+                                    raise
                                 
                                 self.connection = conn_info['connection']
                                 conn_info['last_activity'] = time.time()
@@ -155,35 +172,78 @@ class EmailHandler:
         return False
 
     def select_folder(self, folder_name):
-        """フォルダを選択し、接続状態を確認する"""
-        try:
-            if not self.connection:
-                if not self.connect():
+        """フォルダを選択し、接続状態を確認する（改善版）"""
+        MAX_RETRIES = 3
+        retry_count = 0
+        
+        while retry_count < MAX_RETRIES:
+            try:
+                if not self.connection:
+                    if not self.connect():
+                        return False
+
+                if isinstance(folder_name, bytes):
+                    folder_name = folder_name.decode('utf-8')
+
+                # 接続状態の検証
+                try:
+                    state = self.connection.state
+                    app_logger.debug(f"Current connection state before folder selection: {state}")
+                    
+                    if state != 'AUTH' and state != 'SELECTED':
+                        raise Exception(f"Invalid connection state: {state}")
+                        
+                except Exception as e:
+                    app_logger.error(f"Connection state error: {str(e)}")
+                    self.disconnect()
+                    if not self.connect():
+                        return False
+                
+                # 現在のフォルダと同じ場合はスキップ（ただし状態を確認）
+                if self.current_folder == folder_name:
+                    try:
+                        status, _ = self.connection.noop()
+                        if status == 'OK':
+                            app_logger.debug(f"Reusing current folder selection: {folder_name}")
+                            return True
+                    except:
+                        pass
+
+                # 既存の選択を解除
+                try:
+                    self.connection.close()
+                    app_logger.debug("Closed previous folder selection")
+                except Exception as e:
+                    app_logger.debug(f"Error closing folder: {str(e)}")
+                
+                # フォルダ名をエンコード
+                encoded_folder = folder_name.encode('utf-7').decode('ascii')
+                status, response = self.connection.select(encoded_folder, readonly=True)
+                
+                if status == 'OK':
+                    self.current_folder = folder_name
+                    app_logger.debug(f"Selected folder: {folder_name}")
+                    
+                    # 選択後の状態を確認
+                    if self.connection.state != 'SELECTED':
+                        raise Exception("Folder selection did not result in SELECTED state")
+                        
+                    return True
+                else:
+                    app_logger.error(f"Failed to select folder: {folder_name}, Status: {status}, Response: {response}")
+                    raise Exception(f"Folder selection failed: {response}")
+
+            except Exception as e:
+                app_logger.error(f"Error selecting folder {folder_name} (attempt {retry_count + 1}/{MAX_RETRIES}): {str(e)}")
+                retry_count += 1
+                if retry_count < MAX_RETRIES:
+                    self.disconnect()
+                    time.sleep(1 * retry_count)  # バックオフ
+                else:
+                    self.disconnect()
                     return False
 
-            if isinstance(folder_name, bytes):
-                folder_name = folder_name.decode('utf-8')
-
-            # 現在のフォルダと同じ場合はスキップ
-            if self.current_folder == folder_name:
-                return True
-
-            # フォルダ名をエンコード
-            encoded_folder = folder_name.encode('utf-7').decode('ascii')
-            status, _ = self.connection.select(encoded_folder, readonly=True)
-            
-            if status == 'OK':
-                self.current_folder = folder_name
-                app_logger.debug(f"Selected folder: {folder_name}")
-                return True
-            else:
-                app_logger.error(f"Failed to select folder: {folder_name}")
-                return False
-
-        except Exception as e:
-            app_logger.error(f"Error selecting folder {folder_name}: {str(e)}")
-            self.disconnect()  # 接続をリセット
-            return False
+        return False
 
     def keep_alive(self):
         """接続をキープアライブするためのNOOPコマンドを実行"""
