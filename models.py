@@ -23,40 +23,70 @@ class Contact(db.Model):
 
     def __init__(self, email, display_name=None):
         from utils.email_normalizer import normalize_email
-        normalized_result = normalize_email(email)
-        self.normalized_email = normalized_result[0]  # 正規化されたメールアドレス
-        self.display_name = display_name or normalized_result[1] or email  # 表示名
-        self.email = normalized_result[2] or email  # 元のメールアドレス
+        try:
+            normalized_result = normalize_email(email)
+            if not normalized_result[0]:  # 正規化されたメールアドレスが空の場合
+                raise ValueError("Invalid email address")
+                
+            self.normalized_email = normalized_result[0]  # 正規化されたメールアドレス
+            self.display_name = display_name or normalized_result[1] or email  # 表示名
+            self.email = normalized_result[2] or email  # 元のメールアドレス
+        except Exception as e:
+            raise ValueError(f"Email normalization failed: {str(e)}")
 
     @classmethod
     def find_or_create(cls, email, display_name=None):
         """
         正規化されたメールアドレスに基づいて連絡先を検索または作成する
         重複を防ぎながら、既存のレコードがある場合は更新する
+        
+        Args:
+            email (str): メールアドレス
+            display_name (str, optional): 表示名
+            
+        Returns:
+            Contact: 作成または更新された連絡先
+            
+        Raises:
+            ValueError: メールアドレスが無効な場合
+            sqlalchemy.exc.IntegrityError: データベース制約違反の場合
         """
         from utils.email_normalizer import normalize_email
-        normalized_result = normalize_email(email)
-        if not normalized_result[0]:  # 正規化されたメールアドレスがない場合
-            return None
-
-        contact = cls.query.filter_by(normalized_email=normalized_result[0]).first()
-        if contact:
-            # 既存のレコードがある場合、必要に応じて表示名を更新
-            if display_name and display_name != contact.display_name:
-                contact.display_name = display_name
-                contact.updated_at = datetime.utcnow()
-                db.session.commit()
-        else:
-            # 新しいレコードを作成
-            contact = cls(email=email, display_name=display_name)
-            db.session.add(contact)
-            try:
-                db.session.commit()
-            except Exception as e:
-                db.session.rollback()
-                raise e
-
-        return contact
+        from sqlalchemy import exc
+        
+        try:
+            normalized_result = normalize_email(email)
+            if not normalized_result[0]:
+                raise ValueError("Invalid email address")
+            
+            normalized_email = normalized_result[0]
+            
+            # セッションスコープでトランザクションを管理
+            with db.session.begin_nested():
+                contact = cls.query.filter_by(normalized_email=normalized_email).first()
+                
+                if contact:
+                    if display_name and display_name != contact.display_name:
+                        contact.display_name = display_name
+                        contact.updated_at = datetime.utcnow()
+                else:
+                    contact = cls(email=email, display_name=display_name)
+                    db.session.add(contact)
+                    
+            # 外部トランザクションをコミット
+            db.session.commit()
+            return contact
+            
+        except exc.IntegrityError as e:
+            db.session.rollback()
+            # 一意性制約違反の場合、既存のレコードを返す
+            contact = cls.query.filter_by(normalized_email=normalized_email).first()
+            if contact:
+                return contact
+            raise e
+        except Exception as e:
+            db.session.rollback()
+            raise ValueError(f"Failed to process contact: {str(e)}")
 
     @classmethod
     def merge_contacts(cls, source_id, target_id):
