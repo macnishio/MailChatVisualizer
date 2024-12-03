@@ -1,0 +1,35 @@
+2024-12-03 00:14:15,565 - mailchat - DEBUG - Folder: (\Flagged \HasNoChildren) "/" "[Gmail]/&MLkwvzD8TtgwTQ-"
+2024-12-03 00:14:15,565 - mailchat - DEBUG - Folder: (\HasNoChildren) "/" "[Gmail]/&MMEw4zDDMMg-"
+2024-12-03 00:14:15,565 - mailchat - ERROR - フォルダー名デコードエラー: 'utf7' codec can't decode bytes in position 43-47: non-zero padding bits in shift sequence。フォルダー名をそのまま使用します: (\Drafts \HasNoChildren) "/" "[Gmail]/&Tgtm+DBN-"
+2024-12-03 00:14:15,565 - mailchat - DEBUG - Folder: (\Drafts \HasNoChildren) "/" "[Gmail]/&Tgtm+DBN-"
+2024-12-03 00:14:15,565 - mailchat - DEBUG - Folder: (\HasNoChildren \Junk) "/" "[Gmail]/&j,dg0TDhMPww6w-"
+2024-12-03 00:14:15,565 - mailchat - DEBUG - Folder: (\HasNoChildren \Sent) "/" "[Gmail]/&kAFP4W4IMH8w4TD8MOs-"
+2024-12-03 00:14:15,565 - mailchat - DEBUG - Folder: (\HasNoChildren \Important) "/" "[Gmail]/&kc2JgQ-"
+2024-12-03 00:14:15,565 - mailchat - DEBUG - Folder: (\HasNoChildren) "/" "&MFR1KFR9X4wwRDBLMEwwZzBXMIcwRjBL,x8-"
+2024-12-03 00:14:15,840 - mailchat - DEBUG - === Test Connection Successful ===
+2024-12-03 00:14:15,840 - mailchat - DEBUG - Closing connection...
+2024-12-03 00:14:15,840 - mailchat - DEBUG - Connection removed from pool and logged out
+2024-12-03 00:14:15,840 - mailchat - DEBUG - === Test Connection Completed ===
+2024-12-03 00:14:15,840 - mailchat - DEBUG - Connection test result: True
+2024-12-03 00:14:15,840 - mailchat - DEBUG - Creating new connection to imap.gmail.com...
+2024-12-03 00:14:15,840 - mailchat - DEBUG - Started background email sync
+2024-12-03 00:14:16,475 - mailchat - DEBUG - Attempting login...
+2024-12-03 00:14:17,030 - werkzeug - INFO - 127.0.0.1 - - [03/Dec/2024 00:14:17] "GET / HTTP/1.1" 200 -
+2024-12-03 00:14:17,234 - mailchat - DEBUG - Login successful
+2024-12-03 00:14:17,238 - mailchat - DEBUG - Background handler connected
+2024-12-03 00:14:17,509 - mailchat - DEBUG - Reusing existing connection
+2024-12-03 00:14:17,779 - mailchat - DEBUG - Reusing existing connection
+2024-12-03 00:14:18,624 - mailchat - DEBUG - Selected folder: INBOX
+2024-12-03 00:14:18,792 - mailchat - DEBUG - Session contents: <SecureCookieSession {'email': 'makoto@team240.net', 'imap_server': 'imap.gmail.com', 'password': 'W6atchba7y#Areare0323#'}>
+2024-12-03 00:14:18,792 - mailchat - DEBUG - Attempting to connect with email: makoto@team240.net
+2024-12-03 00:14:18,793 - mailchat - DEBUG - Starting connection test...
+2024-12-03 00:14:18,793 - mailchat - DEBUG - === Test Connection Started ===
+2024-12-03 00:14:18,793 - mailchat - DEBUG - Server: imap.gmail.com
+2024-12-03 00:14:18,793 - mailchat - DEBUG - Email: makoto@team240.net
+2024-12-03 00:14:18,793 - mailchat - DEBUG - Connection attempt 1/5
+2024-12-03 00:14:18,985 - mailchat - DEBUG - Found 1959 messages in INBOX
+2024-12-03 00:14:19,063 - mailchat - ERROR - Error processing message b'84869': command: FETCH => socket error: EOF
+2024-12-03 00:14:19,262 - mailchat - ERROR - Error processing message b'84870': command: FETCH => unexpected response: b'D90/Wa5iBWgErUpc51WwccSKJ5vIgDZcv'
+2024-12-03 00:14:19,262 - mailchat - ERROR - Error processing message b'84871': command: FETCH => unexpected response: b'         XKW3HWo4fIj6HpQgGJ5thuj2WwbcBvtFjzdtrIcrsiW4aOyBCWOc5JKVHrq2ZHJFnc9J'
+2024-12-03 00:14:19,262 - mailchat - ERROR - Error processing message b'84872': command: FETCH => unexpected response: b'         XxGzo69KXRIG/W66twExB01O6Wqs1rdKF39XGGjiMfkbqiDpFs95PLBuTwQXVgF8Q7Qk'
+2024-12-03 00:14:19,262 - mailchat - ERROR - Error processing message b'84873': command: FETCH => unexpected response: b'         bwFg==;'

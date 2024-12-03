@@ -588,20 +588,10 @@ class EmailHandler:
             to_contact = None
 
             if from_email:
-                from_contact = Contact.query.filter_by(
-                    normalized_email=Contact.normalize_email(from_email)
-                ).first()
-                if not from_contact:
-                    from_contact = Contact(email=from_email, display_name=from_display)
-                    db.session.add(from_contact)
+                from_contact = Contact.find_or_create(from_email, display_name=from_display)
 
             if to_email:
-                to_contact = Contact.query.filter_by(
-                    normalized_email=Contact.normalize_email(to_email)
-                ).first()
-                if not to_contact:
-                    to_contact = Contact(email=to_email, display_name=to_display)
-                    db.session.add(to_contact)
+                to_contact = Contact.find_or_create(to_email, display_name=to_display)
 
             if from_contact or to_contact:
                 db.session.commit()
