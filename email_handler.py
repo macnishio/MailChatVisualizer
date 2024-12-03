@@ -44,24 +44,67 @@ class EmailHandler:
         self.last_activity = None
         self.current_folder = None
 
-    def verify_connection_state(self, expected_states=None):
-        """接続状態を検証する"""
+    def verify_connection_state(self, expected_states=None, allow_reconnect=True):
+        """接続状態を検証し、必要に応じて状態遷移を処理する"""
         if not self.connection:
-            return False
+            if not allow_reconnect:
+                return False
+            try:
+                if not self.connect():
+                    return False
+            except Exception as e:
+                app_logger.error(f"Reconnection failed: {str(e)}")
+                return False
             
         try:
             current_state = self.connection.state
             app_logger.debug(f"Current connection state: {current_state}")
             
-            if expected_states and current_state not in expected_states:
-                app_logger.warning(f"Invalid connection state: {current_state}, expected one of: {expected_states}")
+            if expected_states:
+                if current_state not in expected_states:
+                    app_logger.warning(f"Invalid state: {current_state}, expected: {expected_states}")
+                    
+                    # 状態遷移の試行
+                    if 'SELECTED' in expected_states and current_state == 'AUTH':
+                        if self.current_folder:
+                            if not self.select_folder(self.current_folder):
+                                raise Exception("Failed to transition to SELECTED state")
+                            return True
+                    elif 'AUTH' in expected_states and current_state == 'NONAUTH':
+                        try:
+                            status, _ = self.connection.login(self.email_address, self.password)
+                            if status != 'OK':
+                                raise Exception("Login failed during state transition")
+                            return True
+                        except Exception as e:
+                            app_logger.error(f"Login failed: {str(e)}")
+                            return False
+                    
+                    # 状態遷移できない場合は再接続を試みる
+                    if allow_reconnect:
+                        app_logger.debug("Attempting reconnection due to invalid state")
+                        self.disconnect()
+                        return self.verify_connection_state(expected_states, False)
+                    return False
+            
+            # 接続の生存確認
+            try:
+                status, _ = self.connection.noop()
+                if status != 'OK':
+                    raise Exception("NOOP check failed")
+                return True
+            except Exception as e:
+                app_logger.error(f"Connection check failed: {str(e)}")
+                if allow_reconnect:
+                    app_logger.debug("Attempting reconnection after failed NOOP")
+                    self.disconnect()
+                    return self.verify_connection_state(expected_states, False)
                 return False
                 
-            # NOOPで接続の生存確認
-            status, _ = self.connection.noop()
-            return status == 'OK'
         except Exception as e:
             app_logger.error(f"Connection state verification failed: {str(e)}")
+            if allow_reconnect:
+                return self.verify_connection_state(expected_states, False)
             return False
 
     def connect(self):
@@ -114,25 +157,34 @@ class EmailHandler:
                                 if status != 'OK':
                                     raise Exception(f"NOOP failed with status: {status}")
                                 
-                                # 接続状態の検証
+                                # 接続状態の検証と適切な遷移
                                 try:
                                     state = conn_info['connection'].state
                                     app_logger.debug(f"Connection state: {state}")
                                     
-                                    # AUTH状態の場合は再認証を試みる
-                                    if state == 'AUTH':
+                                    # 状態に応じた適切な処理
+                                    if state == 'NONAUTH':
+                                        # NONAUTHの場合は新規認証
                                         status, _ = conn_info['connection'].login(self.email_address, self.password)
                                         if status != 'OK':
-                                            raise Exception("Re-authentication failed")
-                                        app_logger.debug("Re-authenticated successfully")
-                                    
-                                    # 前回のフォルダー選択状態をリセット
-                                    if hasattr(self, 'current_folder') and self.current_folder:
+                                            raise Exception("Authentication failed")
+                                        app_logger.debug("Authenticated successfully")
+                                    elif state == 'AUTH':
+                                        # AUTH状態では再認証は行わない
+                                        app_logger.debug("Connection already authenticated")
+                                    elif state == 'SELECTED':
+                                        # SELECTED状態の場合はリセット
                                         try:
                                             conn_info['connection'].close()
-                                            self.current_folder = None
-                                        except:
-                                            pass
+                                            app_logger.debug("Reset folder selection")
+                                        except Exception as e:
+                                            app_logger.warning(f"Error closing folder: {str(e)}")
+                                    else:
+                                        raise Exception(f"Unknown connection state: {state}")
+                                    
+                                    # 接続状態の最終確認
+                                    if not self.verify_connection_state(['AUTH'], allow_reconnect=False):
+                                        raise Exception("Failed to establish proper connection state")
                                 except Exception as e:
                                     app_logger.warning(f"State verification failed: {str(e)}")
                                     raise

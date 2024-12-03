@@ -1,0 +1,31 @@
+4-12-03 20:32:55,087 - mailchat - DEBUG - Server: imap.gmail.com
+2024-12-03 20:32:55,087 - mailchat - DEBUG - Email: makoto@team240.net
+2024-12-03 20:32:55,087 - mailchat - DEBUG - Connection attempt 1/5
+2024-12-03 20:32:55,572 - mailchat - DEBUG - Login successful
+2024-12-03 20:32:56,099 - mailchat - DEBUG - Connection state: AUTH
+2024-12-03 20:32:56,100 - mailchat - WARNING - State verification failed: command LOGIN illegal in state AUTH, only allowed in states NONAUTH
+2024-12-03 20:32:56,100 - mailchat - WARNING - Connection reuse failed: command LOGIN illegal in state AUTH, only allowed in states NONAUTH
+2024-12-03 20:32:56,518 - mailchat - DEBUG - Creating new connection to imap.gmail.com...
+2024-12-03 20:32:57,222 - mailchat - DEBUG - Attempting login...
+2024-12-03 20:32:58,244 - mailchat - DEBUG - Login successful
+2024-12-03 20:32:58,244 - mailchat - DEBUG - Current connection state: AUTH
+2024-12-03 20:32:58,244 - mailchat - WARNING - Connection reuse failed: socket error: EOF occurred in violation of protocol (_ssl.c:2427)
+2024-12-03 20:32:58,366 - mailchat - ERROR - Connection state verification failed: [SSL: TLSV1_ALERT_PROTOCOL_VERSION] tlsv1 alert protocol version (_ssl.c:2580)
+2024-12-03 20:32:58,366 - mailchat - ERROR - Connection attempt 1 failed: Connection not in AUTH state after connect
+2024-12-03 20:32:58,366 - mailchat - DEBUG - Retrying in 3 seconds...
+2024-12-03 20:32:58,371 - mailchat - DEBUG - Creating new connection to imap.gmail.com...
+2024-12-03 20:32:59,075 - mailchat - DEBUG - Attempting login...
+2024-12-03 20:32:59,940 - mailchat - DEBUG - Login successful
+2024-12-03 20:33:00,223 - mailchat - DEBUG - Current connection state: AUTH
+2024-12-03 20:33:00,506 - mailchat - DEBUG - Current connection state before folder selection: AUTH
+2024-12-03 20:33:00,506 - mailchat - DEBUG - Error closing folder: command CLOSE illegal in state AUTH, only allowed in states SELECTED
+2024-12-03 20:33:01,165 - mailchat - DEBUG - Selected folder: INBOX
+2024-12-03 20:33:01,705 - mailchat - DEBUG - Found 2007 messages in INBOX
+2024-12-03 20:33:02,120 - mailchat - ERROR - Error processing message b'84869': FETCH command error: BAD [b'FETCH not allowed now.']
+2024-12-03 20:33:02,120 - mailchat - ERROR - Error processing message b'84870': command FETCH illegal in state LOGOUT, only allowed in states SELECTED
+2024-12-03 20:33:02,120 - mailchat - ERROR - Error processing message b'84871': command FETCH illegal in state LOGOUT, only allowed in states SELECTED
+2024-12-03 20:33:02,120 - mailchat - ERROR - Error processing message b'84872': command FETCH illegal in state LOGOUT, only allowed in states SELECTED
+2024-12-03 20:33:02,120 - mailchat - ERROR - Error processing message b'84873': command FETCH illegal in state LOGOUT, only allowed in states SELECTED
+2024-12-03 20:33:02,121 - mailchat - ERROR - Error processing message b'84874': command FETCH illegal in state LOGOUT, only allowed in states SELECTED
+2024-12-03 20:33:02,121 - mailchat - ERROR - Error processing folder INBOX: Too many connection errors
+2024-12-03 20:33:02,205 - mailchat - DEBUG - Connection removed from pool and logged out
