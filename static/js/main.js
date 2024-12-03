@@ -129,10 +129,17 @@ document.addEventListener('DOMContentLoaded', function() {
             
             debounceTimer = setTimeout(() => {
                 console.log('API呼び出し:', query);  // デバッグログ
-                fetch(`/api/search_contacts?q=${encodeURIComponent(query)}`)
+                const apiUrl = `/api/search_contacts?q=${encodeURIComponent(query)}`;
+                fetch(apiUrl, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
                     .then(response => {
                         if (!response.ok) {
-                            throw new Error('Network response was not ok');
+                            throw new Error(`Network response was not ok: ${response.status}`);
                         }
                         return response.json();
                     })
@@ -146,6 +153,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 item.className = 'dropdown-item';
                                 item.href = `/?contact=${encodeURIComponent(contact)}`;
                                 item.textContent = contact;
+                                item.setAttribute('role', 'option');
                                 searchResults.appendChild(item);
                             });
                             searchResults.classList.add('show');
