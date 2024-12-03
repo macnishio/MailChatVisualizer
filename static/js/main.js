@@ -84,10 +84,16 @@ document.addEventListener('DOMContentLoaded', function() {
                         'X-Requested-With': 'XMLHttpRequest'
                     }
                 })
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
                 .then(data => {
-                    if (data.messages && data.messages.length > 0) {
-                        data.messages.forEach(message => {
+                    if (data && data.messages && Array.isArray(data.messages)) {
+                        if (data.messages.length > 0) {
+                            data.messages.forEach(message => {
                                 const messageDiv = document.createElement('div');
                                 messageDiv.className = `message ${message.is_sent ? 'sent' : 'received'}`;
                                 messageDiv.innerHTML = `
@@ -101,12 +107,15 @@ document.addEventListener('DOMContentLoaded', function() {
                                 messagesContainer.appendChild(messageDiv);
                             });
                         }
-                        hasNextPage = data.has_next;
+                        hasNextPage = Boolean(data.has_next);
                     } else {
                         hasNextPage = false;
                     }
                 })
-                .catch(error => console.error('Error:', error))
+                .catch(error => {
+                    console.error('Error:', error);
+                    hasNextPage = false;
+                })
                 .finally(() => {
                     loading = false;
                 });
