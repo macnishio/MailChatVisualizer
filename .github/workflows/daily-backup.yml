@@ -1,0 +1,43 @@
+name: Daily Backup
+
+on:
+  schedule:
+    - cron: "0 0 * * *"  # 毎日0時に実行
+  workflow_dispatch:  # 手動実行用
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: リポジトリのチェックアウト
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # 完全な履歴を取得
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Git設定
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+    - name: 変更の確認とバックアップ
+      run: |
+        DATE=$(date '+%Y-%m-%d')
+        # 変更の有無を確認
+        if git status --porcelain | grep .; then
+          # 変更がある場合、コミットとプッシュを実行
+          git add .
+          git commit -m "自動バックアップ: $DATE"
+          git push
+        else
+          echo "変更なし: $DATE"
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: エラー通知
+      if: failure()
+      run: |
+        echo "バックアップ処理でエラーが発生しました"
+        exit 1
