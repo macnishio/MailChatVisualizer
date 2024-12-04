@@ -1,6 +1,9 @@
 from database import db
 from datetime import datetime
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlalchemy import text
+
 import re
 
 class Contact(db.Model):
@@ -127,27 +130,53 @@ class EmailMessage(db.Model):
     message_id = db.Column(db.String(255), unique=True)
     from_contact_id = db.Column(db.Integer, db.ForeignKey('contact.id', ondelete='SET NULL'), nullable=True)
     to_contact_id = db.Column(db.Integer, db.ForeignKey('contact.id', ondelete='SET NULL'), nullable=True)
-    from_address = db.Column(db.String(255))  # 後方互換性のために保持
-    to_address = db.Column(db.String(255))    # 後方互換性のために保持
+    from_address = db.Column(db.String(255))
+    to_address = db.Column(db.String(255))
     subject = db.Column(db.Text)
     body = db.Column(db.Text)
+    body_tsv = db.Column(TSVECTOR)
+    body_hash = db.Column(db.String(32))  # MD5ハッシュ用
+    body_preview = db.Column(db.String(1000))  # プレビュー用
     date = db.Column(db.DateTime, index=True)
     is_sent = db.Column(db.Boolean, default=False)
     folder = db.Column(db.String(100))
     last_sync = db.Column(db.DateTime, default=datetime.utcnow)
 
     __table_args__ = (
-        db.Index('idx_email_message_content', 'subject', 'body'),
+        db.Index('idx_email_message_content_hash', 'body_hash'),
+        db.Index('idx_email_message_fulltext', 'body_tsv', postgresql_using='gin'),
         db.Index('idx_email_message_from_contact', 'from_contact_id'),
         db.Index('idx_email_message_to_contact', 'to_contact_id'),
         db.Index('idx_email_message_addresses', 'from_address', 'to_address'),
         db.Index('idx_email_message_date_folder', 'date', 'folder'),
     )
 
+    @staticmethod
+    def create_body_hash(body):
+        """本文のMD5ハッシュを生成"""
+        if not body:
+            return None
+        return hashlib.md5(body.encode()).hexdigest()
+
+    @staticmethod
+    def create_body_preview(body, length=1000):
+        """本文のプレビューを生成（HTMLタグを除去）"""
+        if not body:
+            return None
+        # HTMLタグを除去してプレインテキスト化
+        text = re.sub(r'<[^>]+>', '', body)
+        # 連続する空白を1つに置換
+        text = re.sub(r'\s+', ' ', text)
+        return text[:length].strip()
+
+    def update_body_fields(self):
+        """本文関連のフィールドを更新"""
+        if self.body:
+            self.body_hash = self.create_body_hash(self.body)
+            self.body_preview = self.create_body_preview(self.body)
+
     def update_contacts(self):
-        """
-        メッセージの送信者と受信者のContactレコードを更新または作成する
-        """
+        """メッセージの送信者と受信者のContactレコードを更新または作成する"""
         if self.from_address:
             from_contact = Contact.find_or_create(self.from_address)
             if from_contact:
@@ -168,7 +197,17 @@ class EmailMessage(db.Model):
             'to_address': self.to_address,
             'subject': self.subject,
             'body': self.body,
+            'body_preview': self.body_preview,
             'date': self.date,
             'is_sent': self.is_sent,
             'folder': self.folder
         }
+
+    @classmethod
+    def search_full_text(cls, query_text):
+        """全文検索を実行するクラスメソッド"""
+        return cls.query.filter(
+            cls.body_tsv.match(
+                db.func.plainto_tsquery('english', query_text)
+            )
+        )
