@@ -25,8 +25,12 @@ def test_parse_email():
             msg.set_content('これはテスト本文です。\nメッセージの保存テスト用。')
             email_body = msg.as_bytes()
             
-            # EmailHandlerのインスタンス作成（IMAP接続なし）
-            handler = EmailHandler()
+            # EmailHandlerのインスタンス作成（テスト用の接続情報）
+            handler = EmailHandler(
+                email_address="test@example.com",
+                password="dummy_password",
+                imap_server="dummy.example.com"
+            )
             
             # メッセージのパース
             parsed_msg = handler.parse_email_message(email_body)

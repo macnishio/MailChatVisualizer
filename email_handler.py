@@ -27,6 +27,10 @@ BATCH_DELAY = 1.0
 RETRY_DELAY = 2  # 基本待機時間
 MAX_BATCH_SIZE = 50
 MIN_BATCH_SIZE = 5
+MAX_BACKOFF_TIME = 30  # 最大バックオフ時間（秒）
+SOCKET_TIMEOUT = 60  # ソケットタイムアウト（秒）
+KEEPALIVE_INTERVAL = 60  # キープアライブ間隔（秒）
+MAX_CONNECTION_AGE = 600  # 最大接続維持時間（秒）
 
 class ConnectionState:
     DISCONNECTED = "DISCONNECTED"
@@ -74,13 +78,19 @@ class EmailHandler:
             return True
 
     def connect(self) -> bool:
-        """IMAPサーバーに接続し、ログインする（改善版）"""
+        """IMAPサーバーに接続し、ログインする（タイムアウト対応強化版）"""
         with self.connection_lock:
             if self.current_state == ConnectionState.CONNECTED:
                 try:
                     status, _ = self.connection.noop()
                     if status == 'OK':
-                        return True
+                        # 接続が古すぎる場合は再接続
+                        current_time = time.time()
+                        if current_time - self.last_reconnect_time > MAX_CONNECTION_AGE:
+                            app_logger.debug("Connection age exceeded maximum, forcing reconnection")
+                            self.disconnect()
+                        else:
+                            return True
                 except Exception:
                     pass
 
@@ -91,24 +101,44 @@ class EmailHandler:
                 # 既存の接続をクリーンアップ
                 self.disconnect()
                 
-                # タイムアウト設定の調整
+                # タイムアウト設定の調整（ジッター追加）
                 original_timeout = socket.getdefaulttimeout()
-                adjusted_timeout = min(CONNECTION_TIMEOUT * (1.5 ** min(self.connection_attempts - 1, 3)), 60)
+                jitter = random.uniform(0, 2)
+                adjusted_timeout = min(
+                    SOCKET_TIMEOUT * (1.5 ** min(self.connection_attempts - 1, 3)) + jitter,
+                    MAX_BACKOFF_TIME
+                )
                 socket.setdefaulttimeout(adjusted_timeout)
                 
                 try:
                     app_logger.debug(f"Creating new connection to {self.imap_server}...")
                     self.connection = imaplib.IMAP4_SSL(self.imap_server)
+                    
+                    # ソケットレベルのタイムアウト設定
                     self.connection.socket().settimeout(adjusted_timeout)
+                    self.connection.socket().setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                    if hasattr(socket, 'TCP_KEEPIDLE'):
+                        self.connection.socket().setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, KEEPALIVE_INTERVAL)
+                    if hasattr(socket, 'TCP_KEEPINTVL'):
+                        self.connection.socket().setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, KEEPALIVE_INTERVAL // 3)
+                    if hasattr(socket, 'TCP_KEEPCNT'):
+                        self.connection.socket().setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
                     
                     app_logger.debug("Attempting login...")
                     self.connection.login(self.email_address, self.password)
                     app_logger.debug("Login successful")
                     
+                    # 接続状態の更新
                     self._update_state(ConnectionState.AUTH)
                     self.last_reconnect_time = time.time()
                     self.last_activity = datetime.now()
                     self.connection_attempts = 0
+                    
+                    # 接続の健全性を確認
+                    status, _ = self.connection.noop()
+                    if status != 'OK':
+                        raise Exception("Connection health check failed after login")
+                        
                     return True
                     
                 finally:
@@ -158,22 +188,40 @@ class EmailHandler:
     def verify_connection_state(self, expected_states: List[str], allow_reconnect: bool = True, force_folder: Optional[str] = None) -> bool:
         """接続状態を検証し、必要に応じて再接続を行う（タイムアウト対応強化版）"""
         with self.connection_lock:
+            # タイムアウト検出を強化
+            if self.connection:
+                try:
+                    status, _ = self.connection.noop()
+                    if status != 'OK':
+                        app_logger.warning("Connection test failed (NOOP check)")
+                        self.current_state = ConnectionState.ERROR
+                except Exception as e:
+                    app_logger.warning(f"Connection test failed: {str(e)}")
+                    self.current_state = ConnectionState.ERROR
+
             if self.current_state not in expected_states:
                 app_logger.warning(f"Invalid connection state: {self.current_state}, expected one of {expected_states}")
                 
                 if not allow_reconnect:
                     return False
                 
-                # 再接続試行回数を制限
+                # 再接続試行回数を制限し、バックオフを改善
                 max_attempts = 3
                 for attempt in range(max_attempts):
                     try:
                         if attempt > 0:
-                            backoff_time = min(2 ** attempt, 10)
+                            # 指数バックオフにジッターを追加
+                            backoff_time = min(2 ** attempt + random.uniform(0, 1), 15)
+                            app_logger.debug(f"Backing off for {backoff_time:.2f} seconds before reconnection attempt {attempt + 1}")
                             time.sleep(backoff_time)
-                            
+                        
+                        # 既存の接続を確実にクリーンアップ
+                        self.disconnect()
+                        
                         if self.connect():
+                            app_logger.debug("Reconnection successful")
                             break
+                            
                     except Exception as e:
                         app_logger.error(f"Reconnection attempt {attempt + 1} failed: {str(e)}")
                         if attempt < max_attempts - 1:
@@ -232,34 +280,51 @@ class EmailHandler:
         error_str = str(error)
         
         # タイムアウトエラーの検出を改善
-        if ('timeout' in error_str.lower() or 
-            'BYE' in error_str or 
-            'LOGOUT' in error_str or 
-            'EOF occurred' in error_str or
-            'socket error' in error_str):
-            
+        is_timeout_error = any(err in error_str.lower() for err in [
+            'timeout', 'bye', 'logout', 'eof occurred', 'socket error',
+            'connection reset', 'broken pipe', 'connection refused'
+        ])
+        
+        if is_timeout_error:
             app_logger.error(f"Connection error during FETCH: {error_str}")
             
-            # 再接続試行回数を制限
+            # 再接続試行回数を制限し、バックオフを改善
             max_attempts = 3
+            base_delay = 2
             for attempt in range(max_attempts):
                 try:
                     if attempt > 0:
-                        backoff_time = min(2 ** attempt, 10)
-                        app_logger.debug(f"Backing off for {backoff_time} seconds before retry...")
+                        # 指数バックオフにジッターを追加
+                        jitter = random.uniform(0, 1)
+                        backoff_time = min(base_delay * (2 ** attempt) + jitter, 20)
+                        app_logger.debug(f"Backing off for {backoff_time:.2f} seconds before retry attempt {attempt + 1}/{max_attempts}")
                         time.sleep(backoff_time)
                     
-                    if self.refresh_connection():
+                    # 接続状態をリセット
+                    self.disconnect()
+                    
+                    # 新しい接続を確立
+                    if self.connect():
+                        # フォルダーの再選択
                         if self.verify_connection_state(['SELECTED'], force_folder=folder):
-                            app_logger.debug("Successfully recovered from FETCH error")
-                            return True
+                            # 接続の健全性を確認
+                            status, _ = self.connection.noop()
+                            if status == 'OK':
+                                app_logger.debug(f"Successfully recovered from FETCH error (attempt {attempt + 1})")
+                                return True
                             
                 except Exception as e:
                     app_logger.error(f"Error recovery attempt {attempt + 1} failed: {str(e)}")
                     if attempt < max_attempts - 1:
                         continue
+                    
+                # 最後の試行が失敗した場合はより長い待機時間を設定
+                if attempt == max_attempts - 1:
+                    time.sleep(min(base_delay * (2 ** (attempt + 1)), 30))
                         
             app_logger.error("Failed to recover from FETCH error after multiple attempts")
+            # 接続の完全リセット
+            self.disconnect()
         return False
 
     def get_gmail_folders(self):
@@ -312,6 +377,13 @@ class EmailHandler:
         sent_folder = self.get_gmail_folders()
         
         try:
+            # 既存のメッセージIDをキャッシュとして取得
+            with session_scope() as session:
+                existing_message_ids = set(
+                    id[0] for id in session.query(EmailMessage.message_id).all()
+                )
+                app_logger.debug(f"Loaded {len(existing_message_ids)} existing message IDs")
+
             folders = ['INBOX']
             if sent_folder:
                 folders.append(sent_folder)
@@ -337,6 +409,7 @@ class EmailHandler:
                     consecutive_success = 0
                     total_processed = 0
                     total_saved = 0
+                    total_skipped = 0  # スキップされたメッセージの合計
                     last_reconnect = time.time()
 
                     with session_scope() as session:  # トランザクション開始
@@ -349,6 +422,7 @@ class EmailHandler:
                             batch_success = 0
                             batch_messages = []
                             batch_saved = 0
+                            batch_skipped = 0  # スキップされたメッセージのカウンター
 
                             app_logger.debug(f"バッチサイズ: {current_batch_size}, 処理済み: {total_processed}/{total_messages}")
 
@@ -379,27 +453,30 @@ class EmailHandler:
 
                                         
                                         if parsed_msg and parsed_msg['message_id']:
-                                            # メッセージのDB保存
-                                            existing_email = session.query(EmailMessage).filter_by(
-                                                message_id=parsed_msg['message_id']
-                                            ).first()
+                                            # メッセージIDによる重複チェック
+                                            if parsed_msg['message_id'] in existing_message_ids:
+                                                app_logger.debug(f"Skipping duplicate message: {parsed_msg['message_id']}")
+                                                batch_skipped += 1
+                                                continue
 
-                                            if not existing_email:
-                                                new_email = EmailMessage(
-                                                    message_id=parsed_msg['message_id'],
-                                                    from_address=parsed_msg['from'],
-                                                    to_address=parsed_msg['to'],
-                                                    subject=parsed_msg['subject'],
-                                                    body=parsed_msg['body'],
-                                                    body_hash=parsed_msg['body_hash'],
-                                                    body_preview=parsed_msg['body_preview'],
-                                                    date=parsed_msg['date'],
-                                                    is_sent=folder == sent_folder,
-                                                    folder=folder
-                                                )
-                                                session.add(new_email)
-                                                batch_saved += 1
-                                                session.flush()  # 即時反映
+                                            # 新規メッセージの場合のみDBに保存
+                                            new_email = EmailMessage(
+                                                message_id=parsed_msg['message_id'],
+                                                from_address=parsed_msg['from'],
+                                                to_address=parsed_msg['to'],
+                                                subject=parsed_msg['subject'],
+                                                body=parsed_msg['body'],
+                                                body_hash=parsed_msg['body_hash'],
+                                                body_preview=parsed_msg['body_preview'],
+                                                date=parsed_msg['date'],
+                                                is_sent=folder == sent_folder,
+                                                folder=folder
+                                            )
+                                            # 連絡先の更新を行う
+                                            new_email.update_contacts()
+                                            session.add(new_email)
+                                            batch_saved += 1
+                                            session.flush()  # 即時反映
                                                 
                                             batch_success += 1
                                             total_processed += 1
@@ -411,8 +488,9 @@ class EmailHandler:
 
                                 # バッチ完了後のコミット
                                 session.commit()
-                                app_logger.debug(f"バッチ {batch_count} 完了: 成功={batch_success}, 保存={batch_saved}, エラー={batch_errors}")
+                                app_logger.debug(f"バッチ {batch_count} 完了: 成功={batch_success}, 新規保存={batch_saved}, スキップ={batch_skipped}, エラー={batch_errors}")
                                 total_saved += batch_saved
+                                total_skipped += batch_skipped  # 合計スキップ数を更新
 
                             except Exception as e:
                                 app_logger.error(f"バッチ処理エラー: {str(e)}")
@@ -557,7 +635,7 @@ class EmailHandler:
         finally:
             self.disconnect()
 
-        app_logger.debug(f"Total new emails synchronized: {len(new_emails)}")
+        app_logger.debug(f"同期完了: 処理済み={total_processed}, 新規保存={total_saved}, スキップ={total_skipped}")
         return new_emails
 
     def test_connection(self):
@@ -568,6 +646,52 @@ class EmailHandler:
             app_logger.debug("Connection successful")
             
             app_logger.debug("Retrieving folder list")
+    def __del__(self):
+        """Destructor to ensure proper cleanup of connections"""
+        try:
+            if hasattr(self, 'connection') and self.connection:
+                self.disconnect()
+        except Exception as e:
+            app_logger.error(f"Error in destructor cleanup: {str(e)}")
+
+    def _handle_timeout(self, error: Exception) -> bool:
+        """Handle various timeout scenarios with improved recovery logic"""
+        error_str = str(error).lower()
+        is_timeout = any(err in error_str for err in [
+            'timeout', 'timed out', 'eof occurred', 'connection reset',
+            'broken pipe', 'connection refused', 'temporary failure'
+        ])
+        
+        if not is_timeout:
+            return False
+            
+        app_logger.warning(f"Timeout detected: {error_str}")
+        
+        # Implement exponential backoff with jitter
+        max_attempts = 3
+        base_delay = 2
+        
+        for attempt in range(max_attempts):
+            try:
+                jitter = random.uniform(0, 1)
+                backoff_time = min(base_delay * (2 ** attempt) + jitter, 15)
+                app_logger.debug(f"Backing off for {backoff_time:.2f} seconds (attempt {attempt + 1}/{max_attempts})")
+                time.sleep(backoff_time)
+                
+                # Force disconnect and reconnect
+                self.disconnect()
+                if self.connect():
+                    app_logger.debug(f"Successfully recovered from timeout (attempt {attempt + 1})")
+                    return True
+                    
+            except Exception as e:
+                app_logger.error(f"Recovery attempt {attempt + 1} failed: {str(e)}")
+                if attempt == max_attempts - 1:
+                    break
+                    
+        app_logger.error("Failed to recover from timeout after multiple attempts")
+        return False
+
             _, folders = self.connection.list()
             app_logger.debug("Available folders:")
             for folder in folders:
