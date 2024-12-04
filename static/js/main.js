@@ -2,31 +2,36 @@ document.addEventListener('DOMContentLoaded', function() {
     const messagesContainer = document.querySelector('.messages-container');
     const pageSizeSelect = document.getElementById('pageSizeSelect');
     const sortSelect = document.getElementById('sortSelect');
-    
+    const searchInput = document.getElementById('contactSearch');
+    const searchResults = document.getElementById('searchResults');
+    let currentPage = 1;
+    let loading = false;
+    let hasNextPage = true;
+
     // ページサイズと並び替えの変更を処理する関数
     function updateUrlAndReload(params) {
         const currentUrl = new URL(window.location.href);
         const contact = currentUrl.searchParams.get('contact');
         const search = currentUrl.searchParams.get('search');
-        
+
         const newParams = new URLSearchParams();
         if (contact) newParams.set('contact', contact);
         if (search) newParams.set('search', search);
-        
+
         // 渡されたパラメータを追加
         Object.entries(params).forEach(([key, value]) => {
             newParams.set(key, value);
         });
-        
+
         // アニメーション効果を追加してページ遷移
         document.body.style.opacity = '0.5';
         document.body.style.transition = 'opacity 0.3s ease';
-        
+
         setTimeout(() => {
             window.location.href = `${window.location.pathname}?${newParams.toString()}`;
         }, 300);
     }
-    
+
     // ページサイズの変更を処理
     if (pageSizeSelect) {
         pageSizeSelect.addEventListener('change', function() {
@@ -36,7 +41,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     }
-    
+
     // 並び替えの変更を処理
     if (sortSelect) {
         sortSelect.addEventListener('change', function() {
@@ -46,7 +51,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     }
-    
+
     // メッセージの展開機能
     document.querySelectorAll('.show-full-message').forEach(button => {
         button.addEventListener('click', function() {
@@ -56,18 +61,11 @@ document.addEventListener('DOMContentLoaded', function() {
             full.style.display = 'block';
         });
     });
-    const currentContact = new URLSearchParams(window.location.search).get('contact');
-    const searchInput = document.getElementById('contactSearch');
-    const searchResults = document.getElementById('searchResults');
-    let debounceTimer;
-    let currentPage = 1;
-    let loading = false;
-    let hasNextPage = true;
 
+    // Infinite scroll for messages
     if (messagesContainer) {
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
-        // Infinite scroll
         messagesContainer.addEventListener('scroll', function() {
             if (loading || !hasNextPage) return;
 
@@ -81,12 +79,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 fetch(`/?${searchParams.toString()}`, {
                     headers: {
-                        'X-Requested-With': 'XMLHttpRequest'
-                    }
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'application/json'
+                    },
+                    credentials: 'same-origin'
                 })
                 .then(response => {
                     if (!response.ok) {
                         throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const contentType = response.headers.get('content-type');
+                    if (!contentType || !contentType.includes('application/json')) {
+                        throw new TypeError("Expected JSON response but received " + contentType);
                     }
                     return response.json();
                 })
@@ -123,57 +127,71 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Contact search functionality
     if (searchInput && searchResults) {
         let debounceTimer;
-        
+
         searchInput.addEventListener('input', function() {
             clearTimeout(debounceTimer);
             const query = this.value.trim();
-            console.log('入力値:', query);  // デバッグログ
-            
+
             if (query.length < 2) {
                 searchResults.classList.remove('show');
                 return;
             }
-            
+
             debounceTimer = setTimeout(() => {
-                console.log('API呼び出し:', query);  // デバッグログ
                 const apiUrl = `/api/search_contacts?q=${encodeURIComponent(query)}`;
                 fetch(apiUrl, {
                     method: 'GET',
                     headers: {
                         'Accept': 'application/json',
                         'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    credentials: 'same-origin'
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Network response was not ok: ${response.status}`);
+                    }
+                    const contentType = response.headers.get('content-type');
+                    if (!contentType || !contentType.includes('application/json')) {
+                        throw new TypeError("Expected JSON response but received " + contentType);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    searchResults.innerHTML = '';
+
+                    if (Array.isArray(data) && data.length > 0) {
+                        data.forEach(contact => {
+                            const item = document.createElement('a');
+                            item.className = 'dropdown-item';
+                            item.href = `/?contact=${encodeURIComponent(contact)}`;
+                            item.textContent = contact;
+                            item.setAttribute('role', 'option');
+                            searchResults.appendChild(item);
+                        });
+                        searchResults.classList.add('show');
+                    } else {
+                        // 検索結果が空の場合のメッセージを表示
+                        const noResults = document.createElement('div');
+                        noResults.className = 'dropdown-item text-muted';
+                        noResults.textContent = '結果が見つかりません';
+                        searchResults.appendChild(noResults);
+                        searchResults.classList.add('show');
                     }
                 })
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error(`Network response was not ok: ${response.status}`);
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        console.log('検索結果:', data);  // デバッグログ
-                        searchResults.innerHTML = '';
-                        
-                        if (Array.isArray(data) && data.length > 0) {
-                            data.forEach(contact => {
-                                const item = document.createElement('a');
-                                item.className = 'dropdown-item';
-                                item.href = `/?contact=${encodeURIComponent(contact)}`;
-                                item.textContent = contact;
-                                item.setAttribute('role', 'option');
-                                searchResults.appendChild(item);
-                            });
-                            searchResults.classList.add('show');
-                        } else {
-                            searchResults.classList.remove('show');
-                        }
-                    })
-                    .catch(error => {
-                        console.error('検索エラー:', error);
-                        searchResults.classList.remove('show');
-                    });
+                .catch(error => {
+                    console.error('Search error:', error);
+                    // エラーメッセージを表示
+                    searchResults.innerHTML = '';
+                    const errorItem = document.createElement('div');
+                    errorItem.className = 'dropdown-item text-danger';
+                    errorItem.textContent = '検索中にエラーが発生しました';
+                    searchResults.appendChild(errorItem);
+                    searchResults.classList.add('show');
+                });
             }, 300);
         });
 
@@ -183,8 +201,17 @@ document.addEventListener('DOMContentLoaded', function() {
                 searchResults.classList.remove('show');
             }
         });
+
+        // Escキーでの非表示
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                searchResults.classList.remove('show');
+            }
+        });
     }
+
     // Add active class to current contact
+    const currentContact = new URLSearchParams(window.location.search).get('contact');
     if (currentContact) {
         const contactLinks = document.querySelectorAll('.contact-item');
         contactLinks.forEach(link => {

@@ -397,33 +397,46 @@ def settings():
 
 @app.route('/api/search_contacts')
 def search_contacts():
+    """連絡先を検索するAPIエンドポイント"""
     if 'email' not in session:
-        return jsonify([])
-        
-    query = request.args.get('q', '')
-    print(f"検索クエリ: {query}")
-    
-    if len(query) >= 2:
-        try:
-            contacts = EmailMessage.query\
-                .with_entities(EmailMessage.from_address)\
-                .filter(
-                    or_(
-                        EmailMessage.from_address.ilike(f'%{query}%'),
-                        EmailMessage.to_address.ilike(f'%{query}%')
-                    )
-                )\
-                .distinct()\
-                .limit(10)\
-                .all()
-            
-            print(f"検索結果: {contacts}")
-            results = [contact[0] for contact in contacts if contact[0]]
-            return jsonify(results)
-        except Exception as e:
-            print(f"連絡先検索エラー: {str(e)}")
-            return jsonify([])
-    return jsonify([])
+        app_logger.warning("未認証のユーザーによる検索リクエスト")
+        return jsonify([]), 401, {'Content-Type': 'application/json'}
+
+    query = request.args.get('q', '').strip()
+    app_logger.debug(f"検索クエリ: {query}")
+
+    if len(query) < 2:
+        return jsonify([]), 200, {'Content-Type': 'application/json'}
+
+    try:
+        # クエリの実行
+        contacts = EmailMessage.query\
+            .with_entities(EmailMessage.from_address)\
+            .filter(
+                or_(
+                    EmailMessage.from_address.ilike(f'%{query}%'),
+                    EmailMessage.to_address.ilike(f'%{query}%')
+                )
+            )\
+            .distinct()\
+            .limit(10)\
+            .all()
+
+        # 結果の処理
+        results = [
+            contact[0] for contact in contacts 
+            if contact[0] and '@' in contact[0]  # 有効なメールアドレスのみ
+        ]
+
+        app_logger.debug(f"検索結果: {len(results)} 件の連絡先が見つかりました")
+        return jsonify(results), 200, {'Content-Type': 'application/json'}
+
+    except Exception as e:
+        app_logger.error(f"連絡先検索エラー: {str(e)}", exc_info=True)
+        return jsonify({
+            'error': 'Internal server error',
+            'message': 'An error occurred while searching contacts'
+        }), 500, {'Content-Type': 'application/json'}
 
 @app.route('/api/search_messages')
 def search_messages():
