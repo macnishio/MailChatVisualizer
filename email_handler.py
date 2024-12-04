@@ -38,7 +38,7 @@ class ConnectionState:
     AUTH = "AUTH"
     SELECTED = "SELECTED"
     ERROR = "ERROR"
-
+    
 class EmailHandler:
     def __init__(self, email_address: str, password: str, imap_server: str):
         self.email_address = email_address
@@ -66,7 +66,7 @@ class EmailHandler:
         """再接続が必要かどうかを判断"""
         if not self.connection:
             return True
-        
+
         current_time = time.time()
         if current_time - self.last_reconnect_time > RECONNECT_INTERVAL:
             return True
@@ -76,6 +76,10 @@ class EmailHandler:
             return status != 'OK'
         except Exception:
             return True
+            
+
+
+
 
     def connect(self) -> bool:
         """IMAPサーバーに接続し、ログインする（タイムアウト対応強化版）"""
@@ -639,13 +643,68 @@ class EmailHandler:
         return new_emails
 
     def test_connection(self):
-        """接続テストを行う"""
+        """接続テストを行う（タイムアウト自動再接続機能付き）"""
         app_logger.debug("Test Connection Started")
-        try:
-            self.connect()
-            app_logger.debug("Connection successful")
-            
-            app_logger.debug("Retrieving folder list")
+        max_attempts = 3
+        base_delay = 2
+
+        for attempt in range(max_attempts):
+            try:
+                if attempt > 0:
+                    # 指数バックオフとジッターを適用
+                    jitter = random.uniform(0, 1)
+                    backoff_time = min(base_delay * (2 ** attempt) + jitter, 20)
+                    app_logger.debug(f"Backing off for {backoff_time:.2f} seconds before retry attempt {attempt + 1}/{max_attempts}")
+                    time.sleep(backoff_time)
+
+                # 既存の接続を確実にクリーンアップ
+                self.disconnect()
+
+                # 接続を確立
+                if not self.connect():
+                    app_logger.error("Failed to establish connection")
+                    continue
+
+                app_logger.debug("Connection successful")
+
+                # 接続の健全性を確認
+                if not self.verify_connection_state(['AUTH', 'SELECTED']):
+                    raise Exception("Failed to verify connection state")
+
+                app_logger.debug("Retrieving folder list")
+                _, folders = self.connection.list()
+                app_logger.debug("Available folders:")
+                for folder in folders:
+                    app_logger.debug(f"- {folder.decode()}")
+                return True
+
+            except imaplib.IMAP4.error as e:
+                app_logger.error(f"IMAP connection error: {str(e)}")
+                if attempt < max_attempts - 1:
+                    continue
+                return False
+
+            except (socket.timeout, socket.error) as e:
+                app_logger.error(f"Network error: {str(e)}")
+                if attempt < max_attempts - 1:
+                    continue
+                return False
+
+            except Exception as e:
+                app_logger.error(f"General error: {str(e)}")
+                app_logger.error(traceback.format_exc())
+                if attempt < max_attempts - 1:
+                    continue
+                return False
+
+            finally:
+                if attempt == max_attempts - 1:
+                    app_logger.debug("Test Connection Ended")
+                    self.disconnect()
+
+        app_logger.error("All connection attempts failed")
+        return False
+
     def __del__(self):
         """Destructor to ensure proper cleanup of connections"""
         try:
@@ -661,56 +720,36 @@ class EmailHandler:
             'timeout', 'timed out', 'eof occurred', 'connection reset',
             'broken pipe', 'connection refused', 'temporary failure'
         ])
-        
+
         if not is_timeout:
             return False
-            
+
         app_logger.warning(f"Timeout detected: {error_str}")
-        
+
         # Implement exponential backoff with jitter
         max_attempts = 3
         base_delay = 2
-        
+
         for attempt in range(max_attempts):
             try:
                 jitter = random.uniform(0, 1)
                 backoff_time = min(base_delay * (2 ** attempt) + jitter, 15)
                 app_logger.debug(f"Backing off for {backoff_time:.2f} seconds (attempt {attempt + 1}/{max_attempts})")
                 time.sleep(backoff_time)
-                
+
                 # Force disconnect and reconnect
                 self.disconnect()
                 if self.connect():
                     app_logger.debug(f"Successfully recovered from timeout (attempt {attempt + 1})")
                     return True
-                    
+
             except Exception as e:
                 app_logger.error(f"Recovery attempt {attempt + 1} failed: {str(e)}")
                 if attempt == max_attempts - 1:
                     break
-                    
+
         app_logger.error("Failed to recover from timeout after multiple attempts")
         return False
-
-            _, folders = self.connection.list()
-            app_logger.debug("Available folders:")
-            for folder in folders:
-                app_logger.debug(f"- {folder.decode()}")
-            return True
-            
-        except imaplib.IMAP4.error as e:
-            app_logger.error(f"IMAP connection error: {str(e)}")
-            return False
-            
-        except Exception as e:
-            app_logger.error(f"General error: {str(e)}")
-            app_logger.error("Detailed error information:")
-            traceback.print_exc()
-            return False
-            
-        finally:
-            app_logger.debug("Test Connection Ended")
-            self.disconnect()
 
     def encode_folder_name(self, folder):
         """フォルダー名をUTF-7でエンコードする"""

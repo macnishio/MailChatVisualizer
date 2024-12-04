@@ -42,51 +42,53 @@ class Contact(db.Model):
         """
         正規化されたメールアドレスに基づいて連絡先を検索または作成する
         重複を防ぎながら、既存のレコードがある場合は更新する
-        
+
         Args:
             email (str): メールアドレス
             display_name (str, optional): 表示名
-            
+
         Returns:
             Contact: 作成または更新された連絡先
-            
+
         Raises:
             ValueError: メールアドレスが無効な場合
             sqlalchemy.exc.IntegrityError: データベース制約違反の場合
         """
         from utils.email_normalizer import normalize_email
         from sqlalchemy import exc
-        
+
         try:
             normalized_result = normalize_email(email)
             if not normalized_result[0]:
                 raise ValueError("Invalid email address")
-            
+
             normalized_email = normalized_result[0]
-            
-            # セッションスコープでトランザクションを管理
-            with db.session.begin_nested():
-                contact = cls.query.filter_by(normalized_email=normalized_email).first()
-                
-                if contact:
-                    if display_name and display_name != contact.display_name:
-                        contact.display_name = display_name
-                        contact.updated_at = datetime.utcnow()
-                else:
-                    contact = cls(email=email, display_name=display_name)
-                    db.session.add(contact)
-                    
-            # 外部トランザクションをコミット
-            db.session.commit()
-            return contact
-            
-        except exc.IntegrityError as e:
-            db.session.rollback()
-            # 一意性制約違反の場合、既存のレコードを返す
+
+            # まず既存の連絡先を検索
             contact = cls.query.filter_by(normalized_email=normalized_email).first()
+
             if contact:
-                return contact
-            raise e
+                # 既存の連絡先が見つかった場合、必要に応じて更新
+                if display_name and display_name != contact.display_name:
+                    contact.display_name = display_name
+                    contact.updated_at = datetime.utcnow()
+                    db.session.add(contact)
+            else:
+                # 新しい連絡先を作成
+                contact = cls(email=email, display_name=display_name)
+                db.session.add(contact)
+
+            try:
+                db.session.commit()
+            except exc.IntegrityError as e:
+                db.session.rollback()
+                # 一意性制約違反の場合、既存のレコードを再取得
+                contact = cls.query.filter_by(normalized_email=normalized_email).first()
+                if not contact:
+                    raise e
+
+            return contact
+
         except Exception as e:
             db.session.rollback()
             raise ValueError(f"Failed to process contact: {str(e)}")
@@ -177,17 +179,24 @@ class EmailMessage(db.Model):
 
     def update_contacts(self):
         """メッセージの送信者と受信者のContactレコードを更新または作成する"""
-        if self.from_address:
-            from_contact = Contact.find_or_create(self.from_address)
-            if from_contact:
-                self.from_contact_id = from_contact.id
-                self.sender = from_contact
+        try:
+            if self.from_address:
+                from_contact = Contact.find_or_create(self.from_address)
+                if from_contact:
+                    self.from_contact_id = from_contact.id
+                    db.session.add(self)  # 明示的にセッションに追加
 
-        if self.to_address:
-            to_contact = Contact.find_or_create(self.to_address)
-            if to_contact:
-                self.to_contact_id = to_contact.id
-                self.recipient = to_contact
+            if self.to_address:
+                to_contact = Contact.find_or_create(self.to_address)
+                if to_contact:
+                    self.to_contact_id = to_contact.id
+                    db.session.add(self)  # 明示的にセッションに追加
+
+            db.session.commit()
+
+        except Exception as e:
+            db.session.rollback()
+            raise ValueError(f"Failed to update contacts: {str(e)}")
 
     def to_dict(self):
         return {
