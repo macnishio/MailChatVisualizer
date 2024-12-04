@@ -1,0 +1,190 @@
+    def check_new_emails(self):
+        """新着メールをチェックし、バッチ処理で取得・保存する（改善版）"""
+        lock_name = f"email_sync_{self.email_address}"
+        total_processed = 0
+        total_saved = 0
+        total_skipped = 0
+
+        with ProcessLock(lock_name) as lock:
+            if not lock:
+                app_logger.warning(f"別の同期プロセスが実行中です: {self.email_address}")
+                return []
+
+            new_emails = []
+            sent_folder = self.get_gmail_folders()
+
+            try:
+                # 同期状態を更新
+                with session_scope() as session:
+                    email_settings = session.query(EmailSettings)\
+                        .filter_by(email=self.email_address)\
+                        .with_for_update()\
+                        .first()
+
+                    if email_settings:
+                        email_settings.is_syncing = True
+                        email_settings.last_sync_status = "IN_PROGRESS"
+                        email_settings.sync_error = None
+                        session.commit()
+
+                # 最後に同期したメッセージの日付を取得
+                with session_scope() as session:
+                    latest_message = session.query(EmailMessage)\
+                        .filter(EmailMessage.folder == 'INBOX')\
+                        .order_by(EmailMessage.date.desc())\
+                        .first()
+
+                    # 最近のメッセージIDをキャッシュとして取得（1週間分）
+                    one_week_ago = datetime.now() - timedelta(days=7)
+                    recent_messages = session.query(EmailMessage.message_id)\
+                        .filter(EmailMessage.date >= one_week_ago)\
+                        .all()
+
+                    existing_message_ids = set(msg[0] for msg in recent_messages if msg[0])
+                    app_logger.debug(f"Loaded {len(existing_message_ids)} recent message IDs")
+
+                folders = ['INBOX']
+                if sent_folder:
+                    folders.append(sent_folder)
+
+                for folder in folders:
+                    try:
+                        if not self.select_folder(folder):
+                            app_logger.warning(f"フォルダー {folder} の選択に失敗しました")
+                            continue
+
+                        # 検索条件の設定
+                        if latest_message and folder == 'INBOX':
+                            search_date = (latest_message.date - timedelta(days=1)).strftime("%d-%b-%Y")
+                            search_criteria = f'(SINCE "{search_date}")'
+                            app_logger.debug(f"増分同期を実行: {search_date} 以降")
+                        else:
+                            search_criteria = 'ALL'
+                            app_logger.debug("全件同期を実行")
+
+                        _, message_nums = self.connection.search(None, search_criteria)
+                        if not message_nums[0]:
+                            app_logger.debug(f"フォルダー {folder} に新着メッセージはありません")
+                            continue
+
+                        message_nums = message_nums[0].split()
+                        total_messages = len(message_nums)
+                        app_logger.debug(f"Found {total_messages} messages in {folder}")
+
+                        current_batch_size = MIN_BATCH_SIZE
+                        batch_delay = BATCH_DELAY
+                        connection_error_count = 0
+                        consecutive_success = 0
+                        last_reconnect = time.time()
+
+                        # バッチ処理
+                        for i in range(0, total_messages, current_batch_size):
+                            with session_scope() as session:
+                                batch_count = (i // current_batch_size) + 1
+                                app_logger.debug(f"バッチ処理開始: {batch_count}/{(total_messages + current_batch_size - 1) // current_batch_size}")
+
+                                batch = message_nums[i:i + current_batch_size]
+                                batch_errors = 0
+                                batch_success = 0
+                                batch_saved = 0
+                                batch_skipped = 0
+
+                                app_logger.debug(f"バッチサイズ: {current_batch_size}, 処理済み: {total_processed}/{total_messages}")
+
+                                try:
+                                    for num in batch:
+                                        try:
+                                            # メッセージの取得と解析
+                                            status, msg_data = self.connection.fetch(num, '(RFC822)')
+                                            if not status == 'OK' or not msg_data or not msg_data[0]:
+                                                app_logger.warning(f"FETCH command failed for message {num}")
+                                                batch_errors += 1
+                                                continue
+
+                                            email_body = msg_data[0][1]
+                                            parsed_msg = self.parse_email_message(email_body)
+
+                                            if parsed_msg and parsed_msg['message_id']:
+                                                if parsed_msg['message_id'] in existing_message_ids:
+                                                    app_logger.debug(f"Skipping duplicate message: {parsed_msg['message_id']}")
+                                                    batch_skipped += 1
+                                                    continue
+
+                                                # 新規メッセージをセッション内で作成
+                                                new_email = EmailMessage(
+                                                    message_id=parsed_msg['message_id'],
+                                                    from_address=parsed_msg['from'],
+                                                    to_address=parsed_msg['to'],
+                                                    subject=parsed_msg['subject'],
+                                                    body=parsed_msg['body'],
+                                                    body_hash=parsed_msg['body_hash'],
+                                                    body_preview=parsed_msg['body_preview'],
+                                                    date=parsed_msg['date'],
+                                                    is_sent=folder == sent_folder,
+                                                    folder=folder
+                                                )
+
+                                                session.add(new_email)
+                                                session.flush()
+
+                                                # 連絡先の更新（同じセッションを使用）
+                                                new_email.update_contacts(session=session)
+
+                                                batch_saved += 1
+                                                existing_message_ids.add(parsed_msg['message_id'])
+                                                batch_success += 1
+
+                                        except Exception as e:
+                                            app_logger.error(f"メッセージ処理エラー: {str(e)}")
+                                            batch_errors += 1
+                                            continue
+
+                                    session.commit()
+                                    total_processed += batch_success
+                                    total_saved += batch_saved
+                                    total_skipped += batch_skipped
+
+                                    app_logger.debug(
+                                        f"バッチ {batch_count} 完了: "
+                                        f"成功={batch_success}, "
+                                        f"新規保存={batch_saved}, "
+                                        f"スキップ={batch_skipped}, "
+                                        f"エラー={batch_errors}"
+                                    )
+
+                                except Exception as e:
+                                    app_logger.error(f"バッチ処理エラー: {str(e)}")
+                                    session.rollback()
+                                    raise
+
+                    except Exception as e:
+                        app_logger.error(f"Error processing folder {folder}: {str(e)}")
+                        continue
+
+            except Exception as e:
+                app_logger.error(f"Email sync error: {str(e)}")
+                # エラー状態を更新
+                with session_scope() as session:
+                    email_settings = session.query(EmailSettings)\
+                        .filter_by(email=self.email_address)\
+                        .first()
+                    if email_settings:
+                        email_settings.is_syncing = False
+                        email_settings.last_sync_status = "ERROR"
+                        email_settings.sync_error = str(e)
+                        session.commit()
+            finally:
+                self.disconnect()
+                # 最終状態を更新
+                with session_scope() as session:
+                    email_settings = session.query(EmailSettings)\
+                        .filter_by(email=self.email_address)\
+                        .first()
+                    if email_settings:
+                        email_settings.is_syncing = False
+                        email_settings.last_sync_status = "SUCCESS"
+                        email_settings.last_sync = datetime.utcnow()
+                        session.commit()
+
+            app_logger.debug(f"同期完了: 処理済み={total_processed}, 新規保存={total_saved}, スキップ={total_skipped}")
+            return new_emails

@@ -1,0 +1,30 @@
+2024-12-04 18:43:45,708 - mailchat - ERROR - Background sync error: create_scoped_session
+Traceback (most recent call last):
+  File "/home/runner/MailChatVisualizer/app.py", line 135, in sync_emails_background
+    with session_scope() as session:
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/database.py", line 13, in session_scope
+    session = db.create_scoped_session()
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask_sqlalchemy/extension.py", line 1008, in __getattr__
+    raise AttributeError(name)
+AttributeError: create_scoped_session
+2024-12-04 18:43:45,719 - werkzeug - INFO - 172.31.196.52 - - [04/Dec/2024 18:43:45] "GET /static/css/style.css HTTP/1.1" 304 -
+2024-12-04 18:43:45,743 - werkzeug - INFO - 172.31.196.52 - - [04/Dec/2024 18:43:45] "GET /static/js/main.js HTTP/1.1" 304 -
+2024-12-04 18:43:45,993 - mailchat - DEBUG - Connection state changed to DISCONNECTED
+2024-12-04 18:43:45,993 - mailchat - DEBUG - Background handler disconnected
+2024-12-04 18:43:45,993 - mailchat - ERROR - Background handler error: create_scoped_session
+Traceback (most recent call last):
+  File "/home/runner/MailChatVisualizer/app.py", line 135, in sync_emails_background
+    with session_scope() as session:
+  File "/nix/store/f98g7xbckgqbkagdvpzc2r6lv3h1p9ki-python3-3.11.9/lib/python3.11/contextlib.py", line 137, in __enter__
+    return next(self.gen)
+           ^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/database.py", line 13, in session_scope
+    session = db.create_scoped_session()
+              ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/MailChatVisualizer/.pythonlibs/lib/python3.11/site-packages/flask_sqlalchemy/extension.py", line 1008, in __getattr__
+    raise AttributeError(name)
+AttributeError: create_scoped_session

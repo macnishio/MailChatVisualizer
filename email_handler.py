@@ -13,7 +13,9 @@ import logging
 import re
 from database import session_scope
 import hashlib
-from models import EmailMessage
+from utils.process_lock import ProcessLock
+from models import EmailMessage, EmailSettings
+
 
 
 # ロガーの設定
@@ -375,273 +377,132 @@ class EmailHandler:
             app_logger.error(f"フォルダー選択エラー: {str(e)}")
             return False
 
-    def check_new_emails(self):
+    def check_new_emails(self, session=None):
         """新着メールをチェックし、バッチ処理で取得・保存する（改善版）"""
-        new_emails = []
-        sent_folder = self.get_gmail_folders()
-        
-        try:
-            # 既存のメッセージIDをキャッシュとして取得
-            with session_scope() as session:
-                existing_message_ids = set(
-                    id[0] for id in session.query(EmailMessage.message_id).all()
-                )
-                app_logger.debug(f"Loaded {len(existing_message_ids)} existing message IDs")
+        if session is None:
+            raise ValueError("Database session is required")
 
-            folders = ['INBOX']
-            if sent_folder:
-                folders.append(sent_folder)
+        lock_name = f"email_sync_{self.email_address}"
+        total_processed = 0
+        total_saved = 0
+        total_skipped = 0
 
-            for folder in folders:
-                try:
-                    if not self.select_folder(folder):
-                        app_logger.warning(f"フォルダー {folder} の選択に失敗しました")
-                        continue
+        with ProcessLock(lock_name) as lock:
+            if not lock:
+                app_logger.warning(f"別の同期プロセスが実行中です: {self.email_address}")
+                return []
 
-                    _, message_nums = self.connection.search(None, 'ALL')
-                    if not message_nums[0]:
-                        app_logger.debug(f"フォルダー {folder} にメッセージが見つかりませんでした")
-                        continue
+            new_emails = []
+            sent_folder = self.get_gmail_folders()
 
-                    message_nums = message_nums[0].split()
-                    total_messages = len(message_nums)
-                    app_logger.debug(f"Found {total_messages} messages in {folder}")
+            try:
+                # 同期状態を更新
+                email_settings = session.query(EmailSettings)\
+                    .filter_by(email=self.email_address)\
+                    .with_for_update()\
+                    .first()
 
-                    current_batch_size = MIN_BATCH_SIZE
-                    batch_delay = BATCH_DELAY
-                    connection_error_count = 0
-                    consecutive_success = 0
-                    total_processed = 0
-                    total_saved = 0
-                    total_skipped = 0  # スキップされたメッセージの合計
-                    last_reconnect = time.time()
+                if email_settings:
+                    email_settings.is_syncing = True
+                    email_settings.last_sync_status = "IN_PROGRESS"
+                    email_settings.sync_error = None
 
-                    with session_scope() as session:  # トランザクション開始
-                        for i in range(0, total_messages, current_batch_size):
-                            batch_count = (i // current_batch_size) + 1
-                            app_logger.debug(f"バッチ処理開始: {batch_count}/{(total_messages + current_batch_size - 1) // current_batch_size}")
-                            
-                            batch = message_nums[i:i + current_batch_size]
-                            batch_errors = 0
-                            batch_success = 0
-                            batch_messages = []
+                # 最後に同期したメッセージの日付を取得
+                latest_message = session.query(EmailMessage)\
+                    .filter(EmailMessage.folder == 'INBOX')\
+                    .order_by(EmailMessage.date.desc())\
+                    .first()
+
+                last_sync_date = latest_message.date if latest_message else None
+
+                # 既存のメッセージIDを取得
+                existing_message_ids = {
+                    msg.message_id for msg in 
+                    session.query(EmailMessage.message_id).all()
+                }
+
+                folders_to_check = ['INBOX']
+                if sent_folder:
+                    folders_to_check.append(sent_folder)
+
+                for folder in folders_to_check:
+                    try:
+                        if not self.select_folder(folder):
+                            continue
+
+                        status, messages = self.connection.search(None, 'ALL')
+                        if status != 'OK':
+                            continue
+
+                        message_nums = messages[0].split()
+                        total_messages = len(message_nums)
+                        batch_size = 100
+                        batch_errors = 0
+
+                        for i in range(0, len(message_nums), batch_size):
+                            batch = message_nums[i:i + batch_size]
+                            current_batch_size = len(batch)
                             batch_saved = 0
-                            batch_skipped = 0  # スキップされたメッセージのカウンター
+                            batch_skipped = 0
 
                             app_logger.debug(f"バッチサイズ: {current_batch_size}, 処理済み: {total_processed}/{total_messages}")
 
-                            # バッチ処理前のNOOP確認
-                            try:
-                                status, _ = self.connection.noop()
-                                if status != 'OK':
-                                    raise Exception("NOOP確認失敗")
-                            except Exception as e:
-                                app_logger.error(f"NOOP確認エラー: {str(e)}")
-                                self.disconnect()
-                                if not self.connect() or not self.select_folder(folder):
-                                    raise Exception("NOOP失敗後の接続回復失敗")
-
-                            # メッセージの処理とDB保存
                             try:
                                 for num in batch:
                                     try:
-                                        # メッセージの取得と解析
                                         status, msg_data = self.connection.fetch(num, '(RFC822)')
                                         if status != 'OK' or not msg_data or not msg_data[0]:
-                                            app_logger.warning(f"FETCH command failed for message {num}")
                                             batch_errors += 1
                                             continue
 
                                         email_body = msg_data[0][1]
                                         parsed_msg = self.parse_email_message(email_body)
 
-                                        
                                         if parsed_msg and parsed_msg['message_id']:
-                                            # メッセージIDによる重複チェック
-                                            if parsed_msg['message_id'] in existing_message_ids:
-                                                app_logger.debug(f"Skipping duplicate message: {parsed_msg['message_id']}")
+                                            if parsed_msg['message_id'] not in existing_message_ids:
+                                                parsed_msg['folder'] = folder
+                                                parsed_msg['is_sent'] = (folder == sent_folder)
+                                                new_emails.append(parsed_msg)
+                                                batch_saved += 1
+                                            else:
                                                 batch_skipped += 1
-                                                continue
-
-                                            # 新規メッセージの場合のみDBに保存
-                                            new_email = EmailMessage(
-                                                message_id=parsed_msg['message_id'],
-                                                from_address=parsed_msg['from'],
-                                                to_address=parsed_msg['to'],
-                                                subject=parsed_msg['subject'],
-                                                body=parsed_msg['body'],
-                                                body_hash=parsed_msg['body_hash'],
-                                                body_preview=parsed_msg['body_preview'],
-                                                date=parsed_msg['date'],
-                                                is_sent=folder == sent_folder,
-                                                folder=folder
-                                            )
-                                            # 連絡先の更新を行う
-                                            new_email.update_contacts()
-                                            session.add(new_email)
-                                            batch_saved += 1
-                                            session.flush()  # 即時反映
-                                                
-                                            batch_success += 1
-                                            total_processed += 1
 
                                     except Exception as e:
                                         app_logger.error(f"メッセージ処理エラー: {str(e)}")
                                         batch_errors += 1
                                         continue
 
-                                # バッチ完了後のコミット
-                                session.commit()
-                                app_logger.debug(f"バッチ {batch_count} 完了: 成功={batch_success}, 新規保存={batch_saved}, スキップ={batch_skipped}, エラー={batch_errors}")
+                                    total_processed += 1
+
                                 total_saved += batch_saved
-                                total_skipped += batch_skipped  # 合計スキップ数を更新
+                                total_skipped += batch_skipped
 
                             except Exception as e:
                                 app_logger.error(f"バッチ処理エラー: {str(e)}")
                                 session.rollback()
                                 raise
-                        
-                        # バッチ処理前のNOOP確認
-                        try:
-                            status, _ = self.connection.noop()
-                            if status != 'OK':
-                                raise Exception("NOOP確認失敗")
-                        except Exception as e:
-                            app_logger.error(f"NOOP確認エラー: {str(e)}")
-                            self.disconnect()
-                            if not self.connect() or not self.select_folder(folder):
-                                raise Exception("NOOP失敗後の接続回復失敗")
-                    
-                        for num in batch:
-                            try:
-                                # 接続状態を確認し、必要に応じて再接続（タイムアウト対応強化版）
-                                current_time = time.time()
-                                connection_age = current_time - last_reconnect
-                                
-                                # 定期的な再接続チェックに加えて、接続状態も確認
-                                if connection_age > RECONNECT_INTERVAL or not self.verify_connection_state(['SELECTED'], allow_reconnect=False):
-                                    app_logger.debug(f"Connection refresh needed (age: {connection_age}s)")
-                                    
-                                    # 再接続試行回数を制限
-                                    max_reconnect_attempts = 3
-                                    reconnect_attempt = 0
-                                    
-                                    while reconnect_attempt < max_reconnect_attempts:
-                                        try:
-                                            app_logger.debug(f"Reconnection attempt {reconnect_attempt + 1}/{max_reconnect_attempts}")
-                                            self.disconnect()
-                                            
-                                            # 指数バックオフを使用
-                                            backoff_time = min(2 ** reconnect_attempt, 10)
-                                            time.sleep(backoff_time)
-                                            
-                                            if self.connect():
-                                                if self.select_folder(folder):
-                                                    app_logger.debug("Successfully reconnected and selected folder")
-                                                    last_reconnect = current_time
-                                                    break
-                                            
-                                            reconnect_attempt += 1
-                                            
-                                        except Exception as e:
-                                            app_logger.error(f"Reconnection attempt {reconnect_attempt + 1} failed: {str(e)}")
-                                            reconnect_attempt += 1
-                                            
-                                    if reconnect_attempt >= max_reconnect_attempts:
-                                        raise Exception("Failed to re-establish connection after multiple attempts")
 
-                                # FETCH操作前の追加の状態検証
-                                if not self.verify_connection_state(['SELECTED'], force_folder=folder):
-                                    app_logger.error(f"Connection not in SELECTED state before FETCH operation")
-                                    raise Exception("Invalid connection state for FETCH")
+                    except Exception as e:
+                        app_logger.error(f"フォルダー処理エラー {folder}: {str(e)}")
+                        continue
 
-                                # FETCH操作前のNOOP確認
-                                try:
-                                    status, _ = self.connection.noop()
-                                    if status != 'OK':
-                                        raise Exception("NOOP check failed before FETCH")
-                                except Exception as e:
-                                    app_logger.error(f"NOOP check failed: {str(e)}")
-                                    raise
+                # 同期状態を更新
+                if email_settings:
+                    email_settings.last_sync = datetime.utcnow()
+                    email_settings.last_sync_status = "SUCCESS"
+                    email_settings.is_syncing = False
 
-                                try:
-                                    # メッセージを取得
-                                    status, msg_data = self.connection.fetch(num, '(RFC822)')
-                                    if status != 'OK' or not msg_data or not msg_data[0]:
-                                        app_logger.warning(f"FETCH command failed or returned invalid data for message {num}")
-                                        batch_errors += 1
-                                        continue
+                app_logger.info(f"同期完了 - 処理: {total_processed}, 保存: {total_saved}, スキップ: {total_skipped}")
+                return new_emails
 
-                                    # レスポンスの解析と状態チェック
-                                    response_str = str(msg_data[0])
-                                    if 'BYE' in response_str or 'LOGOUT' in response_str:
-                                        app_logger.error("Connection received BYE/LOGOUT during FETCH")
-                                        raise Exception("Connection state changed during FETCH")
-
-                                    email_body = msg_data[0][1]
-                                    parsed_msg = self.parse_email_message(email_body)
-
-                                    # FETCH操作後の状態検証
-                                    if not self.verify_connection_state(['SELECTED'], allow_reconnect=False):
-                                        raise Exception("Connection state changed after FETCH")
-
-                                    if parsed_msg and parsed_msg['message_id']:
-                                        parsed_msg['folder'] = folder
-                                        parsed_msg['is_sent'] = folder == sent_folder
-                                        new_emails.append(parsed_msg)
-                                        consecutive_success += 1
-                                        batch_success += 1
-                                        total_processed += 1
-
-                                except Exception as e:
-                                    if not self._handle_fetch_error(e, folder):
-                                        app_logger.error(f"Error during FETCH operation: {str(e)}")
-                                        batch_errors += 1
-                                        consecutive_success = 0
-                                    continue
-
-                            except Exception as e:
-                                app_logger.error(f"Error processing message {num}: {str(e)}")
-                                connection_error_count += 1
-                                consecutive_success = 0
-                                batch_errors += 1
-                                
-                                # エラー回数に応じてバックオフ時間を延長
-                                backoff_time = min(30, (batch_errors * 5))
-                                app_logger.debug(f"Backing off for {backoff_time} seconds...")
-                                time.sleep(backoff_time)
-                                
-                                if connection_error_count > 5:
-                                    raise Exception("Too many connection errors")
-                                continue
-
-                        # バッチサイズの動的調整
-                        if batch_errors == 0 and consecutive_success >= current_batch_size:
-                            # 成功が続いている場合、バッチサイズを増やす
-                            current_batch_size = min(MAX_BATCH_SIZE, current_batch_size + 5)
-                            app_logger.debug(f"Increasing batch size to: {current_batch_size}")
-                        elif batch_errors > current_batch_size // 4:
-                            # エラーが多い場合、バッチサイズを減らす
-                            current_batch_size = max(MIN_BATCH_SIZE, current_batch_size - 5)
-                            app_logger.debug(f"Decreasing batch size to: {current_batch_size}")
-                            consecutive_success = 0
-
-                        # バッチ処理後の待機（エラー数に応じて調整）
-                        adjusted_delay = batch_delay * (1 + (batch_errors * 0.5))
-                        time.sleep(adjusted_delay)
-
-                except Exception as e:
-                    app_logger.error(f"Error processing folder {folder}: {str(e)}")
-                    continue
-
-        except Exception as e:
-            app_logger.error(f"Email sync error: {str(e)}")
-        finally:
-            self.disconnect()
-
-        app_logger.debug(f"同期完了: 処理済み={total_processed}, 新規保存={total_saved}, スキップ={total_skipped}")
-        return new_emails
-
+            except Exception as e:
+                app_logger.error(f"同期エラー: {str(e)}")
+                if email_settings:
+                    email_settings.is_syncing = False
+                    email_settings.last_sync_status = "ERROR"
+                    email_settings.sync_error = str(e)
+                raise   
+    
     def test_connection(self):
         """接続テストを行う（タイムアウト自動再接続機能付き）"""
         app_logger.debug("Test Connection Started")
@@ -772,8 +633,6 @@ class EmailHandler:
                 return folder
         return folder
 
-    def __del__(self):
-        self.disconnect()
 
     def get_conversation(self, contact_email, search_query=None):
         """特定の連絡先とのメール会話を取得する"""

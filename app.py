@@ -120,48 +120,60 @@ def with_connection_control(func):
 
 def sync_emails_background(email_address, password, imap_server):
     """バックグラウンドでメールを同期する"""
+    from utils.process_lock import ProcessLock  # ProcessLockをインポート
+
     with app.app_context():
+        # ユーザーごとのユニークなロック名を作成
+        lock_name = f"email_sync_{email_address}"
+        lock = ProcessLock(lock_name)
+
+        # ロックの取得を試みる
+        if not lock.acquire():
+            app_logger.info(f"同期プロセスは既に実行中です: {email_address}")
+            return
+
         try:
-            # 新しい接続を作成
             background_handler = EmailHandler(
                 email_address=email_address,
                 password=password,
                 imap_server=imap_server
             )
-            # 明示的に接続
             background_handler.connect()
             app_logger.debug("Background handler connected")
 
             try:
-                new_emails = background_handler.check_new_emails()
-                app_logger.debug(f"Background sync completed: {len(new_emails) if new_emails else 0} new emails")
+                with session_scope() as session:
+                    new_emails = background_handler.check_new_emails(session=session)
+                    app_logger.debug(f"Found {len(new_emails) if new_emails else 0} new emails")
 
-                # 独立したセッションスコープを使用してメールデータを保存
-                with session_scope() as scoped_session:
                     for parsed_msg in new_emails:
-                        existing_email = scoped_session.query(EmailMessage).filter_by(message_id=parsed_msg['message_id']).first()
-                        if not existing_email:
-                            new_email = EmailMessage(
-                                message_id=parsed_msg['message_id'],
-                                from_address=parsed_msg['from'],
-                                to_address=parsed_msg['to'],
-                                subject=parsed_msg['subject'],
-                                body=parsed_msg['body'],
-                                date=parsed_msg['date'],
-                                is_sent=parsed_msg.get('is_sent', False),
-                                folder=parsed_msg.get('folder', '')
-                            )
-                            scoped_session.add(new_email)
+                        new_email = EmailMessage(
+                            message_id=parsed_msg['message_id'],
+                            from_address=parsed_msg['from'],
+                            to_address=parsed_msg['to'],
+                            subject=parsed_msg['subject'],
+                            body=parsed_msg['body'],
+                            date=parsed_msg['date'],
+                            is_sent=parsed_msg.get('is_sent', False),
+                            folder=parsed_msg.get('folder', '')
+                        )
+                        session.add(new_email)
+                    
+                    session.commit()
+                    app_logger.debug(f"Successfully saved {len(new_emails)} new emails")
 
             except Exception as e:
-                app_logger.error(f"Background sync error: {str(e)}")
+                app_logger.error(f"Background sync error: {str(e)}", exc_info=True)
+                raise
             finally:
-                # 必ず接続を切断
                 background_handler.disconnect()
                 app_logger.debug("Background handler disconnected")
 
         except Exception as e:
-            app_logger.error(f"Background handler error: {str(e)}")
+            app_logger.error(f"Background handler error: {str(e)}", exc_info=True)
+        finally:
+            # 必ずロックを解放
+            lock.release()
 
 @app.route('/')
 @with_connection_control
@@ -176,37 +188,30 @@ def index():
         flash("メールの設定が必要です", "info")
         return redirect(url_for('settings'))
 
-    app_logger.debug(f"Attempting to connect with email: {session['email']}")
-
-    handler = EmailHandler(
-        email_address=session['email'],
-        password=session['password'],
-        imap_server=session['imap_server']
-    )
-
     try:
-        app_logger.debug("Starting connection test...")
-        test_result = handler.test_connection()
-        app_logger.debug(f"Connection test result: {test_result}")
+        # 現在の同期状態を確認
+        with session_scope() as db_session:
+            email_settings = db_session.query(EmailSettings)\
+                .filter_by(email=session['email'])\
+                .first()
 
-        if not test_result:
-            flash("メールサーバーへの接続テストに失敗しました", "error")
-            app_logger.error("Connection test failed")
-            return redirect(url_for('settings'))
-
-        sync_thread = threading.Thread(
-            target=sync_emails_background,
-            args=(session['email'], session['password'], session['imap_server']),
-            daemon=True
-        )
-        sync_thread.start()
-        app_logger.debug("Started background email sync")
-        flash("メールの同期をバックグラウンドで開始しました", "info")
+            if email_settings and email_settings.is_syncing:
+                app_logger.debug("Sync already in progress")
+                flash("メールの同期が進行中です", "info")
+            else:
+                # 同期が実行されていない場合のみ新しい同期を開始
+                sync_thread = threading.Thread(
+                    target=sync_emails_background,
+                    args=(session['email'], session['password'], session['imap_server']),
+                    daemon=True
+                )
+                sync_thread.start()
+                app_logger.debug("Started background email sync")
+                flash("メールの同期をバックグラウンドで開始しました", "info")
 
     except Exception as e:
-        app_logger.error(f"Connection error: {str(e)}", exc_info=True)
-        flash(f"接続エラー: {str(e)}", "error")
-        return redirect(url_for('settings'))
+        app_logger.error(f"同期状態確認エラー: {str(e)}")
+        flash(f"エラーが発生しました: {str(e)}", "error")
 
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)

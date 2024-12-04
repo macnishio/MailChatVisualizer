@@ -38,21 +38,17 @@ class Contact(db.Model):
             raise ValueError(f"Email normalization failed: {str(e)}")
 
     @classmethod
-    def find_or_create(cls, email, display_name=None):
+    def find_or_create(cls, email, display_name=None, session=None):
         """
         正規化されたメールアドレスに基づいて連絡先を検索または作成する
-        重複を防ぎながら、既存のレコードがある場合は更新する
 
         Args:
             email (str): メールアドレス
             display_name (str, optional): 表示名
+            session (Session, optional): 既存のSQLAlchemyセッション
 
         Returns:
             Contact: 作成または更新された連絡先
-
-        Raises:
-            ValueError: メールアドレスが無効な場合
-            sqlalchemy.exc.IntegrityError: データベース制約違反の場合
         """
         from utils.email_normalizer import normalize_email
         from sqlalchemy import exc
@@ -64,34 +60,54 @@ class Contact(db.Model):
 
             normalized_email = normalized_result[0]
 
-            # まず既存の連絡先を検索
-            contact = cls.query.filter_by(normalized_email=normalized_email).first()
+            # 既存セッションを使用するか新しいセッションを作成
+            if session is None:
+                with session_scope() as new_session:
+                    return cls._do_find_or_create(
+                        normalized_email, 
+                        email, 
+                        display_name, 
+                        new_session
+                    )
+            else:
+                return cls._do_find_or_create(
+                    normalized_email, 
+                    email, 
+                    display_name, 
+                    session
+                )
+
+        except Exception as e:
+            raise ValueError(f"Failed to process contact: {str(e)}")
+
+    @classmethod
+    def _do_find_or_create(cls, normalized_email, original_email, display_name, session):
+        """実際の検索/作成処理を行う内部メソッド"""
+        try:
+            # 既存の連絡先を検索
+            contact = session.query(cls)\
+                .filter_by(normalized_email=normalized_email)\
+                .with_for_update()\
+                .first()
 
             if contact:
-                # 既存の連絡先が見つかった場合、必要に応じて更新
+                # 既存の連絡先を更新
                 if display_name and display_name != contact.display_name:
                     contact.display_name = display_name
                     contact.updated_at = datetime.utcnow()
-                    db.session.add(contact)
             else:
                 # 新しい連絡先を作成
-                contact = cls(email=email, display_name=display_name)
-                db.session.add(contact)
-
-            try:
-                db.session.commit()
-            except exc.IntegrityError as e:
-                db.session.rollback()
-                # 一意性制約違反の場合、既存のレコードを再取得
-                contact = cls.query.filter_by(normalized_email=normalized_email).first()
-                if not contact:
-                    raise e
+                contact = cls(email=original_email, display_name=display_name)
+                session.add(contact)
 
             return contact
 
-        except Exception as e:
-            db.session.rollback()
-            raise ValueError(f"Failed to process contact: {str(e)}")
+        except exc.IntegrityError:
+            session.rollback()
+            # 一意性制約違反の場合、再度検索を試みる
+            return session.query(cls)\
+                .filter_by(normalized_email=normalized_email)\
+                .first()
 
     @classmethod
     def merge_contacts(cls, source_id, target_id):
@@ -126,6 +142,9 @@ class EmailSettings(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     imap_server = db.Column(db.String(120), nullable=False)
     last_sync = db.Column(db.DateTime)
+    last_sync_status = db.Column(db.String(50))  # SUCCESS, ERROR など
+    sync_error = db.Column(db.Text)
+    is_syncing = db.Column(db.Boolean, default=False)
 
 class EmailMessage(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -177,26 +196,32 @@ class EmailMessage(db.Model):
             self.body_hash = self.create_body_hash(self.body)
             self.body_preview = self.create_body_preview(self.body)
 
-    def update_contacts(self):
+    # EmailMessageモデルに追加するメソッド
+    def update_contacts(self, session=None):
         """メッセージの送信者と受信者のContactレコードを更新または作成する"""
         try:
-            if self.from_address:
-                from_contact = Contact.find_or_create(self.from_address)
-                if from_contact:
-                    self.from_contact_id = from_contact.id
-                    db.session.add(self)  # 明示的にセッションに追加
-
-            if self.to_address:
-                to_contact = Contact.find_or_create(self.to_address)
-                if to_contact:
-                    self.to_contact_id = to_contact.id
-                    db.session.add(self)  # 明示的にセッションに追加
-
-            db.session.commit()
-
+            # セッションが渡されない場合は新しいセッションを作成
+            if session is None:
+                with session_scope() as new_session:
+                    return self._do_update_contacts(new_session)
+            else:
+                # 既存のセッションを使用
+                return self._do_update_contacts(session)
         except Exception as e:
-            db.session.rollback()
+            app_logger.error(f"Failed to update contacts: {str(e)}")
             raise ValueError(f"Failed to update contacts: {str(e)}")
+
+    def _do_update_contacts(self, session):
+        """実際の連絡先更新処理を行う内部メソッド"""
+        if self.from_address:
+            from_contact = Contact.find_or_create(self.from_address, session=session)
+            if from_contact:
+                self.from_contact_id = from_contact.id
+
+        if self.to_address:
+            to_contact = Contact.find_or_create(self.to_address, session=session)
+            if to_contact:
+                self.to_contact_id = to_contact.id
 
     def to_dict(self):
         return {

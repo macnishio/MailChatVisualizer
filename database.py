@@ -9,11 +9,13 @@ db = SQLAlchemy(model_class=Base)
 
 @contextmanager
 def session_scope():
+    """トランザクション用のセッションスコープを提供する"""
+    session = db.session
     try:
-        yield db.session
-        db.session.commit()
+        yield session
+        session.commit()
     except Exception as e:
-        db.session.rollback()
+        session.rollback()
         raise
     finally:
-        db.session.close()
+        session.close()

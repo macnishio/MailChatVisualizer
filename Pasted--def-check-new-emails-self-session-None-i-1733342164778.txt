@@ -1,0 +1,143 @@
+    def check_new_emails(self, session=None):
+        """新着メールをチェックし、バッチ処理で取得・保存する（改善版）"""
+        if session is None:
+            raise ValueError("Database session is required")
+
+        lock_name = f"email_sync_{self.email_address}"
+        total_processed = 0
+        total_saved = 0
+        total_skipped = 0
+
+        with ProcessLock(lock_name) as lock:
+            if not lock:
+                app_logger.warning(f"別の同期プロセスが実行中です: {self.email_address}")
+                return []
+
+            new_emails = []
+            sent_folder = self.get_gmail_folders()
+
+            try:
+                # 同期状態を更新
+                email_settings = session.query(EmailSettings)\
+                    .filter_by(email=self.email_address)\
+                    .with_for_update()\
+                    .first()
+
+                if email_settings:
+                    email_settings.is_syncing = True
+                    email_settings.last_sync_status = "IN_PROGRESS"
+                    email_settings.sync_error = None
+
+                # 最後に同期したメッセージの日付を取得
+                latest_message = session.query(EmailMessage)\
+                    .filter(EmailMessage.folder == 'INBOX')\
+                    .order_by(EmailMessage.date.desc())\
+                    .first()
+
+                last_sync_date = latest_message.date if latest_message else None
+
+                # 既存のメッセージIDを取得
+                existing_message_ids = {
+                    msg.message_id for msg in 
+                    session.query(EmailMessage.message_id).all()
+                }
+
+                folders_to_check = ['INBOX']
+                if sent_folder:
+                    folders_to_check.append(sent_folder)
+
+                for folder in folders_to_check:
+                    try:
+                        if not self.select_folder(folder):
+                            continue
+
+                        status, messages = self.connection.search(None, 'ALL')
+                        if status != 'OK':
+                            continue
+
+                        message_nums = messages[0].split()
+                        total_messages = len(message_nums)
+                        batch_size = 100
+                        batch_errors = 0
+
+                        for i in range(0, len(message_nums), batch_size):
+                            batch = message_nums[i:i + batch_size]
+                            current_batch_size = len(batch)
+                            batch_saved = 0
+                            batch_skipped = 0
+
+                            app_logger.debug(f"バッチサイズ: {current_batch_size}, 処理済み: {total_processed}/{total_messages}")
+
+                            try:
+                                for num in batch:
+                                    try:
+                                        status, msg_data = self.connection.fetch(num, '(RFC822)')
+                                        if status != 'OK' or not msg_data or not msg_data[0]:
+                                            batch_errors += 1
+                                            continue
+
+                                        email_body = msg_data[0][1]
+                                        parsed_msg = self.parse_email_message(email_body)
+
+                                        if parsed_msg and parsed_msg['message_id']:
+                                            if parsed_msg['message_id'] not in existing_message_ids:
+                                                parsed_msg['folder'] = folder
+                                                parsed_msg['is_sent'] = (folder == sent_folder)
+                                                new_emails.append(parsed_msg)
+                                                batch_saved += 1
+                                            else:
+                                                batch_skipped += 1
+
+                                    except Exception as e:
+                                        app_logger.error(f"メッセージ処理エラー: {str(e)}")
+                                        batch_errors += 1
+                                        continue
+
+                                    total_processed += 1
+
+                                total_saved += batch_saved
+                                total_skipped += batch_skipped
+
+                            except Exception as e:
+                                app_logger.error(f"バッチ処理エラー: {str(e)}")
+                                session.rollback()
+                                raise
+
+                    except Exception as e:
+                        app_logger.error(f"フォルダー処理エラー {folder}: {str(e)}")
+                        continue
+
+                # 同期状態を更新
+                if email_settings:
+                    email_settings.last_sync = datetime.utcnow()
+                    email_settings.last_sync_status = "SUCCESS"
+                    email_settings.is_syncing = False
+
+                app_logger.info(f"同期完了 - 処理: {total_processed}, 保存: {total_saved}, スキップ: {total_skipped}")
+                return new_emails
+
+            except Exception as e:
+                app_logger.error(f"同期エラー: {str(e)}")
+                if email_settings:
+                    email_settings.is_syncing = False
+                    email_settings.last_sync_status = "ERROR"
+                    email_settings.sync_error = str(e)
+                raise   
+    
+    def test_connection(self):
+        """接続テストを行う（タイムアウト自動再接続機能付き）"""
+        app_logger.debug("Test Connection Started")
+        max_attempts = 3
+        base_delay = 2
+
+        for attempt in range(max_attempts):
+            try:
+                if attempt > 0:
+                    # 指数バックオフとジッターを適用
+                    jitter = random.uniform(0, 1)
+                    backoff_time = min(base_delay * (2 ** attempt) + jitter, 20)
+                    app_logger.debug(f"Backing off for {backoff_time:.2f} seconds before retry attempt {attempt + 1}/{max_attempts}")
+                    time.sleep(backoff_time)
+
+                # 既存の接続を確実にクリーンアップ
+                self.disconnect()
