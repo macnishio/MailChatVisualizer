@@ -51,6 +51,21 @@ flask db upgrade
 python app.py
 ```
 
+## バージョン管理
+
+このプロジェクトは[Semantic Versioning](https://semver.org/)に従ってバージョン管理されています。
+現在のバージョン: v1.0.0
+
+### リリースプロセス
+
+1. `version.py`のバージョン番号を更新
+2. 以下のコマンドでリリースタグを作成:
+```bash
+git tag v$(python3 -c "from version import VERSION; print(VERSION)")
+git push origin --tags
+```
+3. GitHub Actionsが自動的にリリースを作成
+
 ## ライセンス
 
 MIT License

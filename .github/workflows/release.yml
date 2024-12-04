@@ -1,0 +1,38 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # vで始まるタグ（例：v1.0.0）がプッシュされた時に実行
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: リポジトリのチェックアウト
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Pythonのセットアップ
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: バージョン情報の取得
+      id: get_version
+      run: |
+        echo "VERSION=$(python3 -c 'from version import VERSION; print(VERSION)')" >> $GITHUB_ENV
+
+    - name: リリースの作成
+      uses: softprops/action-gh-release@v1
+      with:
+        name: "Release v${{ env.VERSION }}"
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
